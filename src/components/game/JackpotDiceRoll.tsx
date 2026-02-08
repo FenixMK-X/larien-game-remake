@@ -444,7 +444,7 @@ export const JackpotDiceRoll = ({
 
                 {/* Collapsible Punishments */}
                 <CollapsibleSection 
-                  title="Castigos del Dominio" 
+                  title="Efectos del Dominio" 
                   icon="⚠️"
                   colorClass="red"
                 >
