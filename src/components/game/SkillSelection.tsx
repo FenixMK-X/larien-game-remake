@@ -246,6 +246,7 @@ Invoca desde tu averno o descarte 1 Unidad Demonio sin pagar su coste.
 • No puedes perder la partida hasta el inicio de tu próximo turno.`,
     usageType: 'once',
     ownerTurnOnly: true,
+    activationCondition: 'life25',
   },
   // ===== HABILIDADES DE DOMINIO (AZAR AUTOMÁTICO) =====
   {
