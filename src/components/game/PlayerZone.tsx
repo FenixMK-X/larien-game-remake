@@ -758,7 +758,7 @@ export const PlayerZone = ({
                             >
                               <span className="text-[10px] sm:text-xs font-bold text-red-400 flex items-center gap-1 sm:gap-1.5">
                                 <Skull className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                                Efectos del Dominio
+                                Castigos del Dominio
                               </span>
                               <motion.div
                                 animate={{ rotate: showPunishmentDetails ? 180 : 0 }}
