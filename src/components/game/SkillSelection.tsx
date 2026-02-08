@@ -490,12 +490,12 @@ const SkillCard = ({
             </CollapsibleSection>
           )}
 
-          {/* Domain skill - Collapsible punishments */}
+          {/* Domain skill - Collapsible punishments/effects */}
           {skill.isDomainSkill && skill.detailedRules && (
             <CollapsibleSection 
-              title="Castigos del Dominio" 
-              icon="⚠️"
-              colorClass="red"
+              title={skill.id === 'witch-coven' ? "Efectos del Dominio" : "Castigos del Dominio"} 
+              icon={skill.id === 'witch-coven' ? "✨" : "⚠️"}
+              colorClass={skill.id === 'witch-coven' ? "purple" : "red"}
             >
               {skill.detailedRules.punishmentComplete && (
                 <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/30">
