@@ -493,7 +493,7 @@ const SkillCard = ({
           {/* Domain skill - Collapsible punishments */}
           {skill.isDomainSkill && skill.detailedRules && (
             <CollapsibleSection 
-              title="Efectos del Dominio" 
+              title="Castigos del Dominio" 
               icon="⚠️"
               colorClass="red"
             >
