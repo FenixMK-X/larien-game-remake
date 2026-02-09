@@ -1,5 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Swords } from 'lucide-react';
+import { useEffect } from 'react';
+import { useGameSounds } from '@/hooks/useSound';
 
 interface TurnTransitionProps {
   show: boolean;
@@ -8,11 +10,15 @@ interface TurnTransitionProps {
 }
 
 export const TurnTransition = ({ show, player, onComplete }: TurnTransitionProps) => {
+  const { playSound, vibrate } = useGameSounds();
   const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-  const playerColor = player === 'player1' ? 'from-player1' : 'from-player2';
-  const playerGlow = player === 'player1' 
-    ? 'drop-shadow-[0_0_30px_hsl(40,90%,50%)]' 
-    : 'drop-shadow-[0_0_30px_hsl(210,80%,55%)]';
+
+  useEffect(() => {
+    if (show) {
+      playSound('phase');
+      vibrate([30, 50, 30]); // Mechanical sequence haptic
+    }
+  }, [show, playSound, vibrate]);
 
   return (
     <AnimatePresence>
@@ -23,109 +29,254 @@ export const TurnTransition = ({ show, player, onComplete }: TurnTransitionProps
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           onAnimationComplete={() => {
-            setTimeout(onComplete, 800);
+            setTimeout(onComplete, 1200);
           }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden"
         >
-          {/* Radial burst effect */}
+          {/* Dark backdrop with blur */}
           <motion.div
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ 
-              scale: [0, 1.5, 2],
-              opacity: [0, 0.5, 0]
-            }}
-            transition={{ duration: 1, ease: 'easeOut' }}
-            className={`absolute w-64 h-64 rounded-full bg-gradient-radial ${playerColor} to-transparent`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 bg-background/95 backdrop-blur-xl"
           />
 
-          {/* Rotating ring */}
+          {/* Diagonal slash effect - Left side */}
           <motion.div
-            initial={{ rotate: 0, scale: 0.5, opacity: 0 }}
+            initial={{ x: '-100%', skewX: -15 }}
+            animate={{ x: '0%' }}
+            exit={{ x: '-100%' }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-y-0 left-0 w-1/2"
+            style={{
+              background: player === 'player1'
+                ? 'linear-gradient(135deg, hsl(var(--player1) / 0.3) 0%, hsl(var(--player1) / 0.1) 100%)'
+                : 'linear-gradient(135deg, hsl(var(--player2) / 0.3) 0%, hsl(var(--player2) / 0.1) 100%)',
+              clipPath: 'polygon(0 0, 100% 0, 85% 100%, 0 100%)',
+            }}
+          />
+
+          {/* Diagonal slash effect - Right side */}
+          <motion.div
+            initial={{ x: '100%', skewX: -15 }}
+            animate={{ x: '0%' }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+            className="absolute inset-y-0 right-0 w-1/2"
+            style={{
+              background: player === 'player1'
+                ? 'linear-gradient(-135deg, hsl(var(--player1) / 0.3) 0%, hsl(var(--player1) / 0.1) 100%)'
+                : 'linear-gradient(-135deg, hsl(var(--player2) / 0.3) 0%, hsl(var(--player2) / 0.1) 100%)',
+              clipPath: 'polygon(15% 0, 100% 0, 100% 100%, 0 100%)',
+            }}
+          />
+
+          {/* Center slash line */}
+          <motion.div
+            initial={{ scaleY: 0, opacity: 0 }}
+            animate={{ scaleY: 1, opacity: 1 }}
+            exit={{ scaleY: 0, opacity: 0 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
+            className="absolute h-full w-1"
+            style={{
+              background: player === 'player1'
+                ? 'linear-gradient(180deg, transparent, hsl(var(--player1)), transparent)'
+                : 'linear-gradient(180deg, transparent, hsl(var(--player2)), transparent)',
+              boxShadow: player === 'player1'
+                ? '0 0 30px hsl(var(--player1)), 0 0 60px hsl(var(--player1) / 0.5)'
+                : '0 0 30px hsl(var(--player2)), 0 0 60px hsl(var(--player2) / 0.5)',
+            }}
+          />
+
+          {/* Rotating ring 1 (outer) */}
+          <motion.div
+            initial={{ rotate: 0, scale: 0, opacity: 0 }}
             animate={{ 
               rotate: 360, 
               scale: 1, 
+              opacity: [0, 0.8, 0.8, 0]
+            }}
+            transition={{ duration: 1.5, ease: 'easeInOut' }}
+            className="absolute w-80 h-80 rounded-full border-2 border-dashed"
+            style={{
+              borderColor: player === 'player1' ? 'hsl(var(--player1) / 0.5)' : 'hsl(var(--player2) / 0.5)',
+            }}
+          />
+
+          {/* Rotating ring 2 (inner, counter-rotate) */}
+          <motion.div
+            initial={{ rotate: 0, scale: 0, opacity: 0 }}
+            animate={{ 
+              rotate: -360, 
+              scale: 1, 
               opacity: [0, 1, 1, 0]
             }}
-            transition={{ duration: 1.2, ease: 'easeInOut' }}
-            className={`absolute w-48 h-48 rounded-full border-4 border-dashed ${
-              player === 'player1' ? 'border-player1' : 'border-player2'
-            }`}
+            transition={{ duration: 1.2, ease: 'easeInOut', delay: 0.1 }}
+            className="absolute w-56 h-56 rounded-full border-4"
+            style={{
+              borderColor: player === 'player1' ? 'hsl(var(--player1) / 0.7)' : 'hsl(var(--player2) / 0.7)',
+              borderStyle: 'solid',
+              borderTopColor: 'transparent',
+              borderBottomColor: 'transparent',
+            }}
+          />
+
+          {/* Radial burst */}
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ 
+              scale: [0, 2, 3],
+              opacity: [0, 0.6, 0]
+            }}
+            transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
+            className="absolute w-48 h-48 rounded-full"
+            style={{
+              background: player === 'player1'
+                ? 'radial-gradient(circle, hsl(var(--player1)) 0%, transparent 70%)'
+                : 'radial-gradient(circle, hsl(var(--player2)) 0%, transparent 70%)',
+            }}
           />
 
           {/* Center content */}
           <motion.div
             initial={{ scale: 0, y: 20 }}
             animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.8, opacity: 0 }}
+            exit={{ scale: 1.5, opacity: 0 }}
             transition={{ 
               type: 'spring', 
               stiffness: 300, 
               damping: 15,
-              delay: 0.1
+              delay: 0.3
             }}
-            className="flex flex-col items-center gap-4 z-10"
+            className="flex flex-col items-center gap-6 z-10"
           >
-            {/* Icon with glow */}
+            {/* Icon with massive glow */}
             <motion.div
               animate={{ 
-                rotate: [0, -10, 10, 0],
-                scale: [1, 1.1, 1]
+                rotate: [0, -15, 15, -15, 0],
+                scale: [1, 1.2, 1]
               }}
               transition={{ 
-                duration: 0.5, 
-                delay: 0.3,
+                duration: 0.6, 
+                delay: 0.5,
                 repeat: 1
               }}
-              className={playerGlow}
+              className="relative"
             >
-              <Swords className={`w-16 h-16 ${
-                player === 'player1' ? 'text-player1' : 'text-player2'
-              }`} />
+              {/* Glow layers */}
+              <div 
+                className="absolute inset-0 blur-2xl scale-150"
+                style={{
+                  background: player === 'player1'
+                    ? 'hsl(var(--player1) / 0.6)'
+                    : 'hsl(var(--player2) / 0.6)',
+                }}
+              />
+              <div 
+                className="absolute inset-0 blur-xl scale-125"
+                style={{
+                  background: player === 'player1'
+                    ? 'hsl(var(--player1) / 0.4)'
+                    : 'hsl(var(--player2) / 0.4)',
+                }}
+              />
+              <Swords 
+                className="w-20 h-20 relative z-10"
+                style={{
+                  color: player === 'player1' ? 'hsl(var(--player1))' : 'hsl(var(--player2))',
+                  filter: player === 'player1'
+                    ? 'drop-shadow(0 0 20px hsl(var(--player1))) drop-shadow(0 0 40px hsl(var(--player1)))'
+                    : 'drop-shadow(0 0 20px hsl(var(--player2))) drop-shadow(0 0 40px hsl(var(--player2)))',
+                }}
+              />
             </motion.div>
 
-            {/* Player label */}
+            {/* Player label with epic glow */}
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
+              transition={{ delay: 0.4 }}
               className="text-center"
             >
               <motion.span
-                className="text-xs uppercase tracking-[0.3em] text-muted-foreground block mb-1"
+                className="text-xs uppercase tracking-[0.4em] text-muted-foreground block mb-2"
               >
                 Turno de
               </motion.span>
               <motion.h2
-                className={`text-3xl font-display font-bold ${
-                  player === 'player1' ? 'text-player1' : 'text-player2'
-                }`}
+                className="text-5xl md:text-6xl font-display font-black tracking-tight"
+                style={{
+                  color: player === 'player1' ? 'hsl(var(--player1))' : 'hsl(var(--player2))',
+                  textShadow: player === 'player1'
+                    ? '0 0 20px hsl(var(--player1)), 0 0 40px hsl(var(--player1)), 0 0 60px hsl(var(--player1) / 0.5), 0 0 80px hsl(var(--player1) / 0.3)'
+                    : '0 0 20px hsl(var(--player2)), 0 0 40px hsl(var(--player2)), 0 0 60px hsl(var(--player2) / 0.5), 0 0 80px hsl(var(--player2) / 0.3)',
+                }}
                 animate={{
                   textShadow: player === 'player1'
-                    ? ['0 0 10px hsl(40 90% 50% / 0.3)', '0 0 30px hsl(40 90% 50% / 0.8)', '0 0 10px hsl(40 90% 50% / 0.3)']
-                    : ['0 0 10px hsl(210 80% 55% / 0.3)', '0 0 30px hsl(210 80% 55% / 0.8)', '0 0 10px hsl(210 80% 55% / 0.3)']
+                    ? [
+                        '0 0 20px hsl(var(--player1)), 0 0 40px hsl(var(--player1) / 0.5)',
+                        '0 0 40px hsl(var(--player1)), 0 0 80px hsl(var(--player1)), 0 0 120px hsl(var(--player1) / 0.5)',
+                        '0 0 20px hsl(var(--player1)), 0 0 40px hsl(var(--player1) / 0.5)',
+                      ]
+                    : [
+                        '0 0 20px hsl(var(--player2)), 0 0 40px hsl(var(--player2) / 0.5)',
+                        '0 0 40px hsl(var(--player2)), 0 0 80px hsl(var(--player2)), 0 0 120px hsl(var(--player2) / 0.5)',
+                        '0 0 20px hsl(var(--player2)), 0 0 40px hsl(var(--player2) / 0.5)',
+                      ],
                 }}
-                transition={{ duration: 0.8, repeat: Infinity }}
+                transition={{ duration: 1, repeat: Infinity }}
               >
                 {playerLabel}
               </motion.h2>
             </motion.div>
 
-            {/* Decorative lines */}
-            <div className="flex gap-2 mt-2">
-              {[...Array(3)].map((_, i) => (
+            {/* Decorative energy lines */}
+            <div className="flex gap-3 mt-4">
+              {[...Array(5)].map((_, i) => (
                 <motion.div
                   key={i}
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: 1 }}
-                  transition={{ delay: 0.3 + i * 0.1, duration: 0.3 }}
-                  className={`h-1 w-8 rounded-full ${
-                    player === 'player1' ? 'bg-player1' : 'bg-player2'
-                  }`}
-                  style={{ opacity: 1 - i * 0.2 }}
+                  initial={{ scaleX: 0, opacity: 0 }}
+                  animate={{ scaleX: 1, opacity: 1 - i * 0.15 }}
+                  transition={{ delay: 0.5 + i * 0.08, duration: 0.3 }}
+                  className="h-1 rounded-full"
+                  style={{
+                    width: `${32 - i * 4}px`,
+                    background: player === 'player1'
+                      ? 'linear-gradient(90deg, hsl(var(--player1)), hsl(var(--player1) / 0.3))'
+                      : 'linear-gradient(90deg, hsl(var(--player2)), hsl(var(--player2) / 0.3))',
+                    boxShadow: player === 'player1'
+                      ? '0 0 10px hsl(var(--player1) / 0.5)'
+                      : '0 0 10px hsl(var(--player2) / 0.5)',
+                  }}
                 />
               ))}
             </div>
           </motion.div>
+
+          {/* Particle explosion effect on exit */}
+          {[...Array(12)].map((_, i) => (
+            <motion.div
+              key={i}
+              initial={{ scale: 0, x: 0, y: 0, opacity: 0 }}
+              animate={{
+                scale: [0, 1, 0],
+                x: Math.cos((i * 30 * Math.PI) / 180) * 200,
+                y: Math.sin((i * 30 * Math.PI) / 180) * 200,
+                opacity: [0, 1, 0],
+              }}
+              transition={{
+                duration: 0.8,
+                delay: 0.9,
+                ease: 'easeOut',
+              }}
+              className="absolute w-3 h-3 rounded-full"
+              style={{
+                background: player === 'player1' ? 'hsl(var(--player1))' : 'hsl(var(--player2))',
+                boxShadow: player === 'player1'
+                  ? '0 0 15px hsl(var(--player1))'
+                  : '0 0 15px hsl(var(--player2))',
+              }}
+            />
+          ))}
         </motion.div>
       )}
     </AnimatePresence>
