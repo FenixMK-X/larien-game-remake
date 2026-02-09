@@ -10,10 +10,12 @@ import { TokenCounter, TokenCount, TokenType } from './TokenCounter';
 import { SummonTracker, ActiveSummon } from './SummonTracker';
 import { SkillHistoryPanel, SkillHistoryEntry } from './SkillHistoryPanel';
 import { ActiveEffectsIndicator } from './ActiveEffectsIndicator';
+import { AnimatedBackground } from './AnimatedBackground';
 import { RotateCcw, X, Hash } from 'lucide-react';
 import type { GameState, Player } from '@/hooks/useGameState';
 import type { Skill } from './SkillSelection';
 import { useGameSounds } from '@/hooks/useSound';
+import { useGameColors } from '@/hooks/useGameColors';
 
 interface GameScreenProps {
   gameState: GameState;
@@ -97,6 +99,13 @@ export const GameScreen = ({
   const [showTurnTransition, setShowTurnTransition] = useState(false);
   const [transitionPlayer, setTransitionPlayer] = useState<Player>('player1');
 
+  // Initialize reactive color system
+  useGameColors({
+    player1Color: player1Color || 'gold',
+    player2Color: player2Color || 'blue',
+    currentPlayer: gameState.currentPlayer,
+  });
+
   const hasTimer = gameState.timerDuration > 0;
   
   // Check if any player has active domains for visual effects
@@ -166,6 +175,12 @@ export const GameScreen = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
+      {/* Animated Background */}
+      <AnimatedBackground 
+        currentPlayer={gameState.currentPlayer} 
+        gameStarted={gameState.gameStarted} 
+      />
+
       {/* Turn Transition Overlay */}
       <TurnTransition
         show={showTurnTransition}
