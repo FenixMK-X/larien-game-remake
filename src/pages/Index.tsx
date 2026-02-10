@@ -1,29 +1,25 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { SetupScreen } from '@/components/game/SetupScreen';
 import { GameScreen } from '@/components/game/GameScreen';
 import { DiceRoll } from '@/components/game/DiceRoll';
 import { SkillSelection, Skill, AVAILABLE_SKILLS } from '@/components/game/SkillSelection';
-import { JackpotDiceRoll } from '@/components/game/JackpotDiceRoll';
-import { InsectQueenModal } from '@/components/game/InsectQueenModal';
-import { DomainPunishmentModal, DomainPunishment } from '@/components/game/DomainPunishmentModal';
-import { LuckPassiveModal } from '@/components/game/LuckPassiveModal';
-import { WitchCovenModal, WitchCovenState } from '@/components/game/WitchCovenModal';
-import { MotherWitchResultModal } from '@/components/game/MotherWitchResultModal';
-import { LastBreathModal } from '@/components/game/LastBreathModal';
+import { GameModalsContainer } from '@/components/game/GameModalsContainer';
 import { useGameState } from '@/hooks/useGameState';
 import { useGameSounds } from '@/hooks/useSound';
 import { useDomainMusic } from '@/hooks/useDomainMusic';
 import { useToast } from '@/hooks/use-toast';
+import { useWitchCoven } from '@/hooks/useWitchCoven';
+import { useJackpotGame } from '@/hooks/useJackpotGame';
 import { getColorHsl } from '@/components/game/SettingsModal';
 import type { ActiveSummon } from '@/components/game/SummonTracker';
 import type { TokenCount, TokenType } from '@/components/game/TokenCounter';
 import type { ActiveDomain } from '@/components/game/DomainTracker';
 import type { SkillHistoryEntry } from '@/components/game/SkillHistoryPanel';
+import type { WitchCovenState } from '@/components/game/WitchCovenModal';
 
 type GamePhase = 'setup' | 'dice' | 'skills' | 'game';
 
-// Skills that auto-generate summons/tokens
 const SKILL_SUMMON_MAP: Record<string, { type: 'summon' | 'token'; summonType?: ActiveSummon['type']; tokenType?: TokenType }> = {
   'dragon-tamer': { type: 'summon', summonType: 'dragon' },
   'hero-strike': { type: 'summon', summonType: 'hero' },
@@ -32,1432 +28,427 @@ const SKILL_SUMMON_MAP: Record<string, { type: 'summon' | 'token'; summonType?: 
   'hell-gates': { type: 'token', tokenType: 'demon' },
 };
 
-// Domain skills that require slot machine / dice rolling
-const DOMAIN_SKILLS = ['jackpot'];
-
-// Skills that can trigger luck passive
-const LUCK_PASSIVE_SKILLS = ['jackpot'];
-
 interface PendingGame {
   life: number;
   timerMinutes: number | null;
   skillsMode: boolean;
   startingPlayer?: 'player1' | 'player2';
-  diceWinner?: 'player1' | 'player2'; // The player who won the dice roll
+  diceWinner?: 'player1' | 'player2';
   player1Skills?: Skill[];
   player2Skills?: Skill[];
   playerColors?: { player1: string; player2: string };
-}
-
-interface PendingDomain {
-  player: 'player1' | 'player2';
-  skillId: string;
-  skillName: string;
-}
-
-interface PendingInsectQueen {
-  player: 'player1' | 'player2';
-}
-
-interface PendingLuckPassive {
-  player: 'player1' | 'player2';
-  punishment: DomainPunishment;
-  skillName: string;
-  luckPercentage: number;
-}
-
-// Track Jackpot effects per player for punishment logic
-interface JackpotEffectsState {
-  player1: { hasEffect8: boolean; hasEffect9: boolean; overflowingLuck: boolean; isSecondChance: boolean };
-  player2: { hasEffect8: boolean; hasEffect9: boolean; overflowingLuck: boolean; isSecondChance: boolean };
-}
-
-// Pending Last Breath passive trigger (for Caldero Negro lethal damage)
-interface PendingLastBreath {
-  targetPlayer: 'player1' | 'player2';
-  sourcePlayer: 'player1' | 'player2';
-  pendingDamage: number;
-  source: 'calderon';
 }
 
 const Index = () => {
   const [currentPhase, setCurrentPhase] = useState<GamePhase>('setup');
   const [pendingGame, setPendingGame] = useState<PendingGame | null>(null);
   const [playerColors, setPlayerColors] = useState<{ player1: string; player2: string }>({ player1: 'gold', player2: 'blue' });
-  const [activeSkills, setActiveSkills] = useState<{
-    player1: Skill | null;
-    player2: Skill | null;
-  }>({ player1: null, player2: null });
-  const [activeSummons, setActiveSummons] = useState<{
-    player1: ActiveSummon[];
-    player2: ActiveSummon[];
-  }>({ player1: [], player2: [] });
-  const [activeTokens, setActiveTokens] = useState<{
-    player1: TokenCount[];
-    player2: TokenCount[];
-  }>({ player1: [], player2: [] });
-  const [activeDomains, setActiveDomains] = useState<{
-    player1: ActiveDomain[];
-    player2: ActiveDomain[];
-  }>({ player1: [], player2: [] });
-  
-  // Skill history for both players
-  const [skillHistory, setSkillHistory] = useState<{
-    player1: SkillHistoryEntry[];
-    player2: SkillHistoryEntry[];
-  }>({ player1: [], player2: [] });
+  const [activeSkills, setActiveSkills] = useState<{ player1: Skill | null; player2: Skill | null }>({ player1: null, player2: null });
+  const [activeSummons, setActiveSummons] = useState<{ player1: ActiveSummon[]; player2: ActiveSummon[] }>({ player1: [], player2: [] });
+  const [activeTokens, setActiveTokens] = useState<{ player1: TokenCount[]; player2: TokenCount[] }>({ player1: [], player2: [] });
+  const [activeDomains, setActiveDomains] = useState<{ player1: ActiveDomain[]; player2: ActiveDomain[] }>({ player1: [], player2: [] });
+  const [skillHistory, setSkillHistory] = useState<{ player1: SkillHistoryEntry[]; player2: SkillHistoryEntry[] }>({ player1: [], player2: [] });
 
-  // Track Jackpot special effects (8 and 9) per player
-  const [jackpotEffects, setJackpotEffects] = useState<JackpotEffectsState>({
-    player1: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-    player2: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-  });
+  const insectsFromQueenRef = useRef<{ player1: boolean; player2: boolean }>({ player1: false, player2: false });
 
-  // Track which insects were generated by Reina Insecto (for alerts)
-  const insectsFromQueenRef = useRef<{ player1: boolean; player2: boolean }>({
-    player1: false,
-    player2: false,
-  });
-  
-  // Jackpot slot machine modal state
-  const [pendingDomain, setPendingDomain] = useState<PendingDomain | null>(null);
-  const [showJackpotModal, setShowJackpotModal] = useState(false);
-  
-  // Insect Queen modal state
-  const [pendingInsectQueen, setPendingInsectQueen] = useState<PendingInsectQueen | null>(null);
-  const [showInsectQueenModal, setShowInsectQueenModal] = useState(false);
-  
-  // Domain punishment modal state
-  const [pendingPunishment, setPendingPunishment] = useState<DomainPunishment | null>(null);
-  const [showPunishmentModal, setShowPunishmentModal] = useState(false);
-  
-  // Luck Passive modal state
-  const [pendingLuckPassive, setPendingLuckPassive] = useState<PendingLuckPassive | null>(null);
-  const [showLuckPassiveModal, setShowLuckPassiveModal] = useState(false);
-  
-  // Witch Coven state (Cacería del Aquelarre Absoluto)
-  const initialCovenState: WitchCovenState = {
-    isActive: false,
-    activatedTurn: 0,
-    witchCount: { field: 0, hand: 0, graveyard: 0, averno: 0 },
-    treasureLimit: 7,
-    motherWitchCooldown: 0,
-    lastMotherWitchTurn: 0,
-  };
-  const [witchCovenState, setWitchCovenState] = useState<{
-    player1: WitchCovenState;
-    player2: WitchCovenState;
-  }>({
-    player1: { ...initialCovenState },
-    player2: { ...initialCovenState },
-  });
-  const [showWitchCovenModal, setShowWitchCovenModal] = useState(false);
-  const [witchCovenPlayer, setWitchCovenPlayer] = useState<'player1' | 'player2' | null>(null);
-  
-  // Mother Witch result modal state
-  const [showMotherWitchResult, setShowMotherWitchResult] = useState(false);
-  const [motherWitchPlayer, setMotherWitchPlayer] = useState<'player1' | 'player2' | null>(null);
-  
-  // Contraataque Desesperado passive trigger state (for Caldero Negro lethal damage)
-  const [pendingLastBreath, setPendingLastBreath] = useState<PendingLastBreath | null>(null);
-  const [showLastBreathFromPassive, setShowLastBreathFromPassive] = useState(false);
-  
   const { playSound } = useGameSounds();
   const { playDomainMusic, stopDomainMusic } = useDomainMusic();
   const { toast } = useToast();
 
-  // Control domain music - only START when Jackpot is active (stopping is handled after punishment resolution)
+  const {
+    gameState, startGame, updateLife, setLife,
+    advancePhase, passPhase, endTurn,
+    toggleTimer, resetTimer, resetGame, exitToSetup,
+  } = useGameState();
+
+  // Use extracted hooks
+  const witchCoven = useWitchCoven({
+    gameState,
+    activeSkills,
+    setActiveSkills,
+    setActiveDomains,
+    updateLife,
+  });
+
+  const jackpot = useJackpotGame({
+    gameState,
+    activeSkills,
+    setActiveSkills,
+    setLife,
+    activeDomains,
+    setActiveDomains,
+    setSkillHistory,
+    setActiveTokens,
+  });
+
+  // Domain music control
   useEffect(() => {
     const hasActiveJackpot = activeDomains.player1.some(d => d.skillId === 'jackpot') ||
                              activeDomains.player2.some(d => d.skillId === 'jackpot');
-    
     if (hasActiveJackpot) {
       playDomainMusic('jackpot');
     }
-    // Music stops explicitly in handleLuckPassiveResult, not here
   }, [activeDomains, playDomainMusic]);
 
-  const {
-    gameState,
-    startGame,
-    updateLife,
-    setLife,
-    advancePhase,
-    passPhase,
-    endTurn,
-    toggleTimer,
-    resetTimer,
-    resetGame,
-    exitToSetup,
-  } = useGameState();
-
-  const handleSetupComplete = (life: number, timerMinutes: number | null, skillsMode: boolean, colors?: { player1: string; player2: string }) => {
+  const handleSetupComplete = useCallback((life: number, timerMinutes: number | null, skillsMode: boolean, colors?: { player1: string; player2: string }) => {
     setPendingGame({ life, timerMinutes, skillsMode, playerColors: colors });
-    if (colors) {
-      setPlayerColors(colors);
-    }
+    if (colors) setPlayerColors(colors);
     setCurrentPhase('dice');
-  };
+  }, []);
 
-  const handleDiceComplete = (startingPlayer: 'player1' | 'player2', diceWinner: 'player1' | 'player2') => {
-    if (pendingGame) {
-      if (pendingGame.skillsMode) {
-        // Go to skill selection first - winner selects first
-        setPendingGame({ ...pendingGame, startingPlayer, diceWinner });
-        setCurrentPhase('skills');
-      } else {
-        // No skills mode, start game directly
-        startGame(pendingGame.life, pendingGame.timerMinutes, startingPlayer);
-        setActiveSkills({ player1: null, player2: null });
-        setPendingGame(null);
-        setCurrentPhase('game');
-      }
-    }
-  };
-
-  const handleSkillsComplete = (player1Skills: Skill[], player2Skills: Skill[]) => {
-    if (pendingGame && pendingGame.startingPlayer) {
-      startGame(pendingGame.life, pendingGame.timerMinutes, pendingGame.startingPlayer);
-      // Store skills for use during game
-      setActiveSkills({
-        player1: player1Skills[0] || null,
-        player2: player2Skills[0] || null,
-      });
+  const handleDiceComplete = useCallback((startingPlayer: 'player1' | 'player2', diceWinner: 'player1' | 'player2') => {
+    if (!pendingGame) return;
+    if (pendingGame.skillsMode) {
+      setPendingGame({ ...pendingGame, startingPlayer, diceWinner });
+      setCurrentPhase('skills');
+    } else {
+      startGame(pendingGame.life, pendingGame.timerMinutes, startingPlayer);
+      setActiveSkills({ player1: null, player2: null });
       setPendingGame(null);
       setCurrentPhase('game');
     }
-  };
+  }, [pendingGame, startGame]);
 
-  // Handle domain dice completion - now includes effect 8/9 tracking
-  const handleDomainDiceComplete = useCallback((duration: number, selectedEffectIds: string[], hasEffect8: boolean, hasEffect9: boolean) => {
-    if (!pendingDomain) return;
-    
-    const { player, skillId, skillName } = pendingDomain;
-    const skill = AVAILABLE_SKILLS.find(s => s.id === skillId);
-    
-    // Get effect names and descriptions for display
-    const effectDetails = selectedEffectIds.map(id => {
-      const opt = skill?.options?.find(o => o.id === id);
-      return {
-        name: opt?.name || id,
-        description: opt?.description || '',
-      };
-    });
-    
-    const effectNames = effectDetails.map(e => e.name);
-    
-    // Store Jackpot special effects for this player
-    const hasBothEffects = hasEffect8 && hasEffect9;
-    const currentIsSecondChance = jackpotEffects[player].isSecondChance;
-    
-    setJackpotEffects(prev => ({
-      ...prev,
-      [player]: {
-        // In second chance, effects 8 and 9 are NOT available
-        hasEffect8: currentIsSecondChance ? false : hasEffect8,
-        hasEffect9: currentIsSecondChance ? false : hasEffect9,
-        // "Suerte Desbordante": If both 8 and 9, save 100% luck for NEXT punishment
-        overflowingLuck: hasBothEffects && !currentIsSecondChance ? true : prev[player].overflowingLuck,
-        // PRESERVE isSecondChance state
-        isSecondChance: currentIsSecondChance,
-      },
-    }));
-    
-    // Create the domain
-    const newDomain: ActiveDomain = {
-      id: `${skillId}-${Date.now()}`,
-      skillId,
-      skillName,
-      turnsRemaining: duration,
-      activeEffects: effectNames,
-      player,
-    };
-    
-    setActiveDomains(prev => ({
-      ...prev,
-      [player]: [...prev[player], newDomain],
-    }));
-    
-    // Add to skill history with effect descriptions
-    const historyEntry: SkillHistoryEntry = {
-      id: `${skillId}-${Date.now()}`,
-      skillId,
-      skillName,
-      timestamp: Date.now(),
-      turnsRemaining: duration,
-      activeEffects: effectNames,
-      effectDescriptions: effectDetails.map(e => `${e.name}: ${e.description}`),
-      isActive: true,
-    };
-    setSkillHistory(prev => ({
-      ...prev,
-      [player]: [...prev[player], historyEntry],
-    }));
-    
-    // Mark skill as used
+  const handleSkillsComplete = useCallback((player1Skills: Skill[], player2Skills: Skill[]) => {
+    if (pendingGame?.startingPlayer) {
+      startGame(pendingGame.life, pendingGame.timerMinutes, pendingGame.startingPlayer);
+      setActiveSkills({ player1: player1Skills[0] || null, player2: player2Skills[0] || null });
+      setPendingGame(null);
+      setCurrentPhase('game');
+    }
+  }, [pendingGame, startGame]);
+
+  // Handle skill activation
+  const handleUseSkill = useCallback((player: 'player1' | 'player2', optionId?: string) => {
+    const skill = activeSkills[player];
+    if (!skill) return;
+
+    if (skill.id === 'jackpot') {
+      jackpot.actions.setPendingDomain({ player, skillId: skill.id, skillName: skill.name });
+      jackpot.actions.setShowJackpotModal(true);
+      return;
+    }
+
+    if (skill.id === 'witch-coven') {
+      const playerTurnCount = player === 'player1' ? gameState.player1TurnCount : gameState.player2TurnCount;
+      if (playerTurnCount >= 5 && !witchCoven.state.witchCovenState[player].isActive) {
+        witchCoven.actions.handleActivateWitchCoven(player);
+        witchCoven.actions.setWitchCovenState(prev => ({
+          ...prev,
+          [player]: { ...prev[player], isActive: true, activatedTurn: playerTurnCount },
+        }));
+      }
+      witchCoven.actions.handleOpenWitchCovenModal(player);
+      return;
+    }
+
+    if (skill.id === 'insect-queen') {
+      jackpot.actions.setPendingInsectQueen({ player });
+      jackpot.actions.setShowInsectQueenModal(true);
+      return;
+    }
+
+    const autoGen = SKILL_SUMMON_MAP[skill.id];
+    if (autoGen) {
+      if (autoGen.type === 'summon' && autoGen.summonType) {
+        const newSummon: ActiveSummon = {
+          id: `${autoGen.summonType}-${Date.now()}`,
+          type: autoGen.summonType,
+          name: autoGen.summonType === 'dragon' ? 'Dragón' : autoGen.summonType === 'hero' ? 'Héroe' : 'Gigante',
+          ...(autoGen.summonType === 'dragon' ? { deathCounter: 3, attackBonus: 0 } : {}),
+        };
+        setActiveSummons(prev => ({ ...prev, [player]: [...prev[player], newSummon] }));
+        toast({ title: `🎯 ¡${newSummon.name} invocado!`, description: `${player === 'player1' ? 'Jugador 1' : 'Jugador 2'} ha invocado un ${newSummon.name}.` });
+      } else if (autoGen.type === 'token' && autoGen.tokenType === 'demon') {
+        setActiveTokens(prev => {
+          const existing = prev[player].find(t => t.type === 'demon');
+          if (existing) return { ...prev, [player]: prev[player].map(t => t.type === 'demon' ? { ...t, count: t.count + 1 } : t) };
+          return { ...prev, [player]: [...prev[player], { type: 'demon' as TokenType, count: 1 }] };
+        });
+        toast({ title: `👹 ¡Demonio invocado!`, description: `${player === 'player1' ? 'Jugador 1' : 'Jugador 2'} ha invocado un Demonio desde el averno.` });
+      }
+    }
+
     setActiveSkills(prev => {
       const currentSkill = prev[player];
       if (!currentSkill) return prev;
-      
-      if (currentSkill.usageType === 'once') {
-        return { ...prev, [player]: { ...currentSkill, used: true } };
-      } else if (currentSkill.usageType === 'cooldown' && currentSkill.cooldown) {
+
+      if (currentSkill.usageType === 'cooldown' && currentSkill.options && optionId) {
+        return { ...prev, [player]: { ...currentSkill, cooldownRemaining: currentSkill.cooldown } };
+      }
+
+      if (currentSkill.options && optionId) {
+        const updatedOptions = currentSkill.options.map(opt => opt.id === optionId ? { ...opt, used: true } : opt);
+        const usedCount = updatedOptions.filter(opt => opt.used).length;
+        const remaining = (currentSkill.maxUses ?? currentSkill.options.length) - usedCount;
+        return { ...prev, [player]: { ...currentSkill, options: updatedOptions, usesRemaining: remaining, used: remaining <= 0 } };
+      }
+
+      if (currentSkill.usageType === 'once') return { ...prev, [player]: { ...currentSkill, used: true } };
+      if (currentSkill.usageType === 'limited' && currentSkill.maxUses) {
+        const remaining = (currentSkill.usesRemaining ?? currentSkill.maxUses) - 1;
+        return { ...prev, [player]: { ...currentSkill, usesRemaining: remaining, used: remaining <= 0 } };
+      }
+      if (currentSkill.usageType === 'cooldown' && currentSkill.cooldown) {
         return { ...prev, [player]: { ...currentSkill, cooldownRemaining: currentSkill.cooldown } };
       }
       return prev;
     });
-    
-    // Domain activated - no toast notification (user requested removal)
-    
-    setPendingDomain(null);
-    setShowJackpotModal(false);
-  }, [pendingDomain, toast, jackpotEffects]);
+  }, [activeSkills, gameState, witchCoven, jackpot, toast]);
 
-  // Handle Insect Queen modal completion
-  const handleInsectQueenComplete = useCallback((poisonedCount: number) => {
-    if (!pendingInsectQueen) return;
-    
-    const { player } = pendingInsectQueen;
-    
-    // Track that these insects are from Reina Insecto
-    insectsFromQueenRef.current[player] = true;
-    
-    setActiveTokens(prev => {
-      const existing = prev[player].find(t => t.type === 'insect');
-      if (existing) {
-        return {
-          ...prev,
-          [player]: prev[player].map(t => 
-            t.type === 'insect' ? { ...t, count: t.count + poisonedCount } : t
-          ),
-        };
-      }
-      return {
-        ...prev,
-        [player]: [...prev[player], { type: 'insect' as TokenType, count: poisonedCount }],
-      };
-    });
-    
-    // Mark skill as used
+  const reduceCooldowns = useCallback(() => {
     setActiveSkills(prev => {
-      const currentSkill = prev[player];
-      if (!currentSkill) return prev;
-      return { ...prev, [player]: { ...currentSkill, used: true } };
-    });
-    
-    toast({
-      title: `🐛 ¡Insectos invocados!`,
-      description: `${poisonedCount} ficha${poisonedCount > 1 ? 's' : ''} insecto con +${poisonedCount} de ataque.`,
-    });
-    
-    playSound('skillActivate');
-    setPendingInsectQueen(null);
-    setShowInsectQueenModal(false);
-  }, [pendingInsectQueen, toast, playSound]);
-
-  // Handle skill activation with auto-summon/token generation
-  const handleUseSkill = useCallback((player: 'player1' | 'player2', optionId?: string, extraData?: { poisonedCount?: number }) => {
-    const skill = activeSkills[player];
-    if (!skill) return;
-
-    // Check if it's a Jackpot domain skill - trigger slot machine modal
-    if (skill.id === 'jackpot') {
-      setPendingDomain({
-        player,
-        skillId: skill.id,
-        skillName: skill.name,
-      });
-      setShowJackpotModal(true);
-      return; // Don't process further - wait for slot machine result
-    }
-    
-    // Check if it's Witch Coven - AUTO-ACTIVATE the domain and open modal
-    if (skill.id === 'witch-coven') {
-      const playerTurnCount = player === 'player1' ? gameState.player1TurnCount : gameState.player2TurnCount;
-      
-      // Auto-activate the Coven domain if turn requirement is met
-      if (playerTurnCount >= 5 && !witchCovenState[player].isActive) {
-        handleActivateWitchCoven(player);
-        // Update coven state to active
-        setWitchCovenState(prev => ({
-          ...prev,
-          [player]: {
-            ...prev[player],
-            isActive: true,
-            activatedTurn: playerTurnCount,
-          },
-        }));
-      }
-      
-      // Open the modal for managing witches
-      handleOpenWitchCovenModal(player);
-      return; // Don't process further - wait for modal interaction
-    }
-
-    // Check if it's Insect Queen - trigger count modal
-    if (skill.id === 'insect-queen') {
-      setPendingInsectQueen({ player });
-      setShowInsectQueenModal(true);
-      return; // Don't process further - wait for count input
-    }
-
-    // Check if skill generates a summon or token
-    const autoGen = SKILL_SUMMON_MAP[skill.id];
-    if (autoGen) {
-      if (autoGen.type === 'summon' && autoGen.summonType) {
-        // Auto-generate summon
-        const newSummon: ActiveSummon = {
-          id: `${autoGen.summonType}-${Date.now()}`,
-          type: autoGen.summonType,
-          name: autoGen.summonType === 'dragon' ? 'Dragón' : 
-                autoGen.summonType === 'hero' ? 'Héroe' : 'Gigante',
-          ...(autoGen.summonType === 'dragon' ? { deathCounter: 3, attackBonus: 0 } : {}),
-        };
-        setActiveSummons(prev => ({
-          ...prev,
-          [player]: [...prev[player], newSummon],
-        }));
-        
-        const summonName = newSummon.name;
-        toast({
-          title: `🎯 ¡${summonName} invocado!`,
-          description: `${player === 'player1' ? 'Jugador 1' : 'Jugador 2'} ha invocado un ${summonName}.`,
-        });
-      } else if (autoGen.type === 'token' && autoGen.tokenType === 'demon') {
-        // Demon token from Hell Gates
-        setActiveTokens(prev => {
-          const existing = prev[player].find(t => t.type === 'demon');
-          if (existing) {
-            return {
-              ...prev,
-              [player]: prev[player].map(t => 
-                t.type === 'demon' ? { ...t, count: t.count + 1 } : t
-              ),
-            };
-          }
-          return {
-            ...prev,
-            [player]: [...prev[player], { type: 'demon' as TokenType, count: 1 }],
-          };
-        });
-        
-        toast({
-          title: `👹 ¡Demonio invocado!`,
-          description: `${player === 'player1' ? 'Jugador 1' : 'Jugador 2'} ha invocado un Demonio desde el averno.`,
-        });
-      }
-    }
-
-    // Update skill state
-    setActiveSkills(prev => {
-      const currentSkill = prev[player];
-      if (!currentSkill) return prev;
-
-      // Special handling for cooldown skills with options (like Escala de Tesoros)
-      if (currentSkill.usageType === 'cooldown' && currentSkill.options && optionId) {
-        return {
-          ...prev,
-          [player]: {
-            ...currentSkill,
-            cooldownRemaining: currentSkill.cooldown,
-          },
-        };
-      }
-
-      // If skill has options (non-cooldown type), mark the specific option as used
-      if (currentSkill.options && optionId) {
-        const updatedOptions = currentSkill.options.map(opt => 
-          opt.id === optionId ? { ...opt, used: true } : opt
-        );
-        const usedCount = updatedOptions.filter(opt => opt.used).length;
-        const remaining = (currentSkill.maxUses ?? currentSkill.options.length) - usedCount;
-        
-        return {
-          ...prev,
-          [player]: {
-            ...currentSkill,
-            options: updatedOptions,
-            usesRemaining: remaining,
-            used: remaining <= 0,
-          },
-        };
-      }
-
-      // For skills without options
-      if (currentSkill.usageType === 'once') {
-        return {
-          ...prev,
-          [player]: { ...currentSkill, used: true },
-        };
-      } else if (currentSkill.usageType === 'limited' && currentSkill.maxUses) {
-        const remaining = (currentSkill.usesRemaining ?? currentSkill.maxUses) - 1;
-        return {
-          ...prev,
-          [player]: { 
-            ...currentSkill, 
-            usesRemaining: remaining,
-            used: remaining <= 0,
-          },
-        };
-      } else if (currentSkill.usageType === 'cooldown' && currentSkill.cooldown) {
-        return {
-          ...prev,
-          [player]: {
-            ...currentSkill,
-            cooldownRemaining: currentSkill.cooldown,
-          },
-        };
-      }
-      return prev;
-    });
-  }, [activeSkills, toast]);
-
-  // Helper function to reduce cooldowns for both players
-  const reduceCooldowns = () => {
-    setActiveSkills(prev => {
-      const updateSkillCooldown = (skill: Skill | null): Skill | null => {
-        if (!skill || skill.usageType !== 'cooldown') return skill;
-        if (!skill.cooldownRemaining || skill.cooldownRemaining <= 0) return skill;
-        
-        const newCooldown = Math.max(0, skill.cooldownRemaining - 1);
-        return {
-          ...skill,
-          cooldownRemaining: newCooldown,
-        };
+      const update = (skill: Skill | null): Skill | null => {
+        if (!skill || skill.usageType !== 'cooldown' || !skill.cooldownRemaining || skill.cooldownRemaining <= 0) return skill;
+        return { ...skill, cooldownRemaining: Math.max(0, skill.cooldownRemaining - 1) };
       };
-      
-      return {
-        player1: updateSkillCooldown(prev.player1),
-        player2: updateSkillCooldown(prev.player2),
-      };
+      return { player1: update(prev.player1), player2: update(prev.player2) };
     });
-  };
+  }, []);
 
-  // Auto-decrement domain turns and trigger punishment modal
-  // NEW FLOW: Show punishment first, then "Probar Suerte" triggers dice
-  const decrementDomainTurns = (playerEnding: 'player1' | 'player2') => {
-    // First, check if any domain is ending for a player in second chance
+  const decrementDomainTurns = useCallback((playerEnding: 'player1' | 'player2') => {
     let secondChanceDefeatApplied = false;
-    
+
     (['player1', 'player2'] as const).forEach(player => {
       activeDomains[player].forEach(domain => {
-        const newTurns = domain.turnsRemaining - 1;
-        if (newTurns <= 0) {
-          const playerEffects = jackpotEffects[domain.player];
-          
-          // Check if this is second chance - if so, skip dice roll and auto-defeat
+        if (domain.turnsRemaining - 1 <= 0) {
+          const playerEffects = jackpot.state.jackpotEffects[domain.player];
           if (playerEffects.isSecondChance) {
             const opponent = domain.player === 'player1' ? 'player2' : 'player1';
-            const opponentLife = gameState[opponent].life;
-            const playerLabel = domain.player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-            
-            // Stop domain music
-            stopDomainMusic();
-            
-            if (opponentLife > 0) {
-              // Opponent still has life = automatic defeat
+            if (gameState[opponent].life > 0) {
+              stopDomainMusic();
               setLife(domain.player, 0);
-              toast({
-                title: '💀 ¡Segunda Oportunidad Fallida!',
-                description: `${playerLabel}: El segundo Jackpot terminó sin ganar. ¡Derrota automática!`,
-                variant: 'destructive',
-              });
+              toast({ title: '💀 ¡Segunda Oportunidad Fallida!', description: `${domain.player === 'player1' ? 'Jugador 1' : 'Jugador 2'}: Derrota automática.`, variant: 'destructive' });
             }
-            
-            // Clear all Jackpot effects
-            setJackpotEffects(prevEffects => ({
-              ...prevEffects,
-              [domain.player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-            }));
-            
-            // Update skill history to mark as inactive
-            setSkillHistory(prevHistory => ({
-              ...prevHistory,
-              [domain.player]: prevHistory[domain.player].map(h =>
-                h.skillId === domain.skillId ? { ...h, isActive: false, turnsRemaining: 0 } : h
-              ),
-            }));
-            
+            jackpot.actions.setJackpotEffects(prev => ({ ...prev, [domain.player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false } }));
+            setSkillHistory(prev => ({ ...prev, [domain.player]: prev[domain.player].map(h => h.skillId === domain.skillId ? { ...h, isActive: false, turnsRemaining: 0 } : h) }));
             secondChanceDefeatApplied = true;
           }
         }
       });
     });
-    
-    // If second chance defeat was applied, just remove the domain and return
+
     if (secondChanceDefeatApplied) {
-      setActiveDomains(prev => ({
-        player1: prev.player1.filter(d => d.turnsRemaining > 1),
-        player2: prev.player2.filter(d => d.turnsRemaining > 1),
-      }));
+      setActiveDomains(prev => ({ player1: prev.player1.filter(d => d.turnsRemaining > 1), player2: prev.player2.filter(d => d.turnsRemaining > 1) }));
       return;
     }
-    
-    // Normal flow - process domains
+
     setActiveDomains(prev => {
-      const updatedDomains: { player1: ActiveDomain[]; player2: ActiveDomain[] } = {
-        player1: [],
-        player2: [],
-      };
-      
-      // Process each player's domains
+      const updated: { player1: ActiveDomain[]; player2: ActiveDomain[] } = { player1: [], player2: [] };
       (['player1', 'player2'] as const).forEach(player => {
         prev[player].forEach(domain => {
           const newTurns = domain.turnsRemaining - 1;
-          
           if (newTurns <= 0) {
-            // Get player's Jackpot effects
-            const playerEffects = jackpotEffects[domain.player];
-            
-            // SECOND CHANCE: Skip luck passive entirely - defeat was already applied above
-            if (playerEffects.isSecondChance) {
-              // Domain is removed, no punishment modal shown
-              return;
-            }
-            
-            // Domain ended - determine if it ended on owner's turn or opponent's turn
+            const playerEffects = jackpot.state.jackpotEffects[domain.player];
+            if (playerEffects.isSecondChance) return;
+
             const endedOnOwnTurn = domain.player === playerEnding;
-            // CORRECTED: Complete punishment = ends on OWN turn, Reduced = ends on OPPONENT turn
             const punishmentType = endedOnOwnTurn ? 'complete' : 'reduced';
-            
             playSound('phase');
-            
-            // Check for "Suerte Desbordante" (overflowing luck from previous 8+9 combo)
-            const hasOverflowingLuck = playerEffects.overflowingLuck;
-            
-            // Calculate luck percentage
-            // Effect 9: 100% chance
-            // Overflowing Luck: 100% chance (and consume it)
+
             let luckPercentage = 25;
             if (playerEffects.hasEffect9) {
               luckPercentage = 100;
-            } else if (hasOverflowingLuck) {
+            } else if (playerEffects.overflowingLuck) {
               luckPercentage = 100;
-              // Consume overflowing luck
-              setJackpotEffects(prevEffects => ({
-                ...prevEffects,
-                [domain.player]: { ...prevEffects[domain.player], overflowingLuck: false },
-              }));
+              jackpot.actions.setJackpotEffects(prev => ({ ...prev, [domain.player]: { ...prev[domain.player], overflowingLuck: false } }));
             }
-            
-            // Create punishment object with effect info
-            const punishment: DomainPunishment = {
-              domainId: domain.id,
-              domainName: domain.skillName,
-              skillId: domain.skillId,
-              player: domain.player,
-              endedOnOwnTurn,
-              punishmentType,
-              hasEffect8: playerEffects.hasEffect8,
-              hasEffect9: playerEffects.hasEffect9,
-              luckPercentage,
-              isSecondChance: playerEffects.isSecondChance,
+
+            const punishment = {
+              domainId: domain.id, domainName: domain.skillName, skillId: domain.skillId,
+              player: domain.player, endedOnOwnTurn, punishmentType: punishmentType as 'complete' | 'reduced',
+              hasEffect8: playerEffects.hasEffect8, hasEffect9: playerEffects.hasEffect9,
+              luckPercentage, isSecondChance: playerEffects.isSecondChance,
             };
-            
-            // Show punishment modal first (user clicks "Probar Suerte" to trigger dice)
-            setPendingPunishment(punishment);
-            setShowPunishmentModal(true);
-            
-            // Update skill history to mark as inactive
-            setSkillHistory(prevHistory => ({
-              ...prevHistory,
-              [domain.player]: prevHistory[domain.player].map(h =>
-                h.skillId === domain.skillId ? { ...h, isActive: false, turnsRemaining: 0 } : h
-              ),
-            }));
+
+            jackpot.actions.setPendingPunishment(punishment);
+            jackpot.actions.setShowPunishmentModal(true);
+            setSkillHistory(prev => ({ ...prev, [domain.player]: prev[domain.player].map(h => h.skillId === domain.skillId ? { ...h, isActive: false, turnsRemaining: 0 } : h) }));
           } else {
-            // Domain still active
-            updatedDomains[player].push({
-              ...domain,
-              turnsRemaining: newTurns,
-            });
-            
-            // Update skill history with new turn count
-            setSkillHistory(prevHistory => ({
-              ...prevHistory,
-              [domain.player]: prevHistory[domain.player].map(h =>
-                h.skillId === domain.skillId && h.isActive ? { ...h, turnsRemaining: newTurns } : h
-              ),
-            }));
+            updated[player].push({ ...domain, turnsRemaining: newTurns });
+            setSkillHistory(prev => ({ ...prev, [domain.player]: prev[domain.player].map(h => h.skillId === domain.skillId && h.isActive ? { ...h, turnsRemaining: newTurns } : h) }));
           }
         });
       });
-      
-      return updatedDomains;
+      return updated;
     });
-  };
+  }, [activeDomains, jackpot.state.jackpotEffects, jackpot.actions, gameState, stopDomainMusic, setLife, toast, playSound]);
 
-  // Handle "Probar Suerte" button click - triggers luck passive dice
-  // For Second Chance: Skip luck passive entirely and apply defeat
-  const handleTryLuck = useCallback((punishment: DomainPunishment) => {
-    setShowPunishmentModal(false);
-    
-    // SECOND CHANCE: No luck passive, immediate defeat
-    if (punishment.isSecondChance) {
-      const player = punishment.player;
-      const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-      
-      // Stop domain music
-      stopDomainMusic();
-      
-      // Apply automatic defeat
-      setLife(player, 0);
-      
-      // Clear Jackpot effects
-      setJackpotEffects(prev => ({
-        ...prev,
-        [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-      }));
-      
-      playSound('defeat');
-      
-      toast({
-        title: '💀 Segunda Oportunidad Agotada',
-        description: `${playerLabel} ha perdido. El dominio terminó sin victoria.`,
-      });
-      
-      return;
+  const handleApplyDamage = useCallback((targetPlayer: 'player1' | 'player2', damage: number, sourceSkillId?: string) => {
+    const isLethal = gameState[targetPlayer].life - damage <= 0;
+    const targetSkill = activeSkills[targetPlayer];
+    if (isLethal && targetSkill?.id === 'last-breath' && !targetSkill.used && sourceSkillId !== 'last-breath') {
+      toast({ title: '⚠️ ¡Contraataque Desesperado Activado!', description: `${targetPlayer === 'player1' ? 'Jugador 1' : 'Jugador 2'} activa su Contraataque ante el daño letal.` });
     }
-    
-    // Normal flow: Trigger luck passive modal
-    setPendingLuckPassive({
-      player: punishment.player,
-      punishment,
-      skillName: punishment.domainName,
-      luckPercentage: punishment.luckPercentage ?? 25,
-    });
-    setShowLuckPassiveModal(true);
-  }, [stopDomainMusic, playSound, toast, setLife]);
+    updateLife(targetPlayer, -damage);
+  }, [gameState, activeSkills, toast, updateLife]);
 
-  // Handle luck passive result - CORRECTED: Actually cancel or apply punishment
-  const handleLuckPassiveResult = useCallback((success: boolean) => {
-    if (!pendingLuckPassive) return;
-    
-    const { punishment, skillName, player } = pendingLuckPassive;
-    const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    
-    // Close modal and clear state first
-    setPendingLuckPassive(null);
-    setShowLuckPassiveModal(false);
-    
-    // Stop domain music after punishment resolution
-    stopDomainMusic();
-    
-    if (success) {
-      // Luck succeeded - cancel punishment and reactivate skill - DO NOT apply punishment
-      toast({
-        title: `🍀 ¡Pasiva de Suerte Activada!`,
-        description: `${playerLabel} anuló el castigo de ${skillName}. La habilidad puede reactivarse.`,
-      });
-      
-      // Reactivate the skill
-      setActiveSkills(prev => {
-        const currentSkill = prev[player];
-        if (!currentSkill) return prev;
-        return { ...prev, [player]: { ...currentSkill, used: false } };
-      });
-      
-      // Clear Jackpot effects for this player (keep isSecondChance)
-      setJackpotEffects(prev => ({
-        ...prev,
-        [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: prev[player].overflowingLuck, isSecondChance: false },
-      }));
-      
-      playSound('skillActivate');
-      
-      // IMPORTANT: Return early to ensure punishment is NOT applied
-      return;
-    }
-    
-    // Luck failed - apply punishment ONLY when success is false
-    // Extract punishment data and apply directly here to avoid stale closure issues
-    const { skillId, punishmentType, hasEffect8 } = punishment;
-    
-    // Effect 8 reduces severity: Complete -> Reduced -> Canceled
-    let effectiveType = punishmentType;
-    if (hasEffect8) {
-      if (punishmentType === 'complete') {
-        effectiveType = 'reduced';
-      } else if (punishmentType === 'reduced') {
-        effectiveType = 'canceled';
-      }
-    }
-    
-    // If canceled by effect 8, punishment is anulled and skill REACTIVATES
-    if (effectiveType === 'canceled') {
-      toast({
-        title: '🍀 ¡Reescritura del Azar!',
-        description: `${playerLabel}: El Efecto 8 anuló el castigo. ¡La habilidad puede reactivarse!`,
-      });
-      
-      playSound('skillActivate');
-      
-      // Reactivate the skill
-      setActiveSkills(prev => {
-        const currentSkill = prev[player];
-        if (!currentSkill) return prev;
-        return { ...prev, [player]: { ...currentSkill, used: false } };
-      });
-      
-      // Clear Jackpot effects
-      setJackpotEffects(prev => ({
-        ...prev,
-        [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: prev[player].overflowingLuck, isSecondChance: false },
-      }));
-      return;
-    }
-    
-    // Check if this is second chance ending - auto-defeat if opponent has life > 0
-    const isSecondChance = jackpotEffects[player].isSecondChance;
-    const opponent = player === 'player1' ? 'player2' : 'player1';
-    const opponentLife = gameState[opponent].life;
-    
-    // Apply life reduction based on skill and effective punishment type
-    if (skillId === 'jackpot') {
-      if (effectiveType === 'complete' || isSecondChance) {
-        // Complete punishment OR second chance ending = auto-defeat
-        if (opponentLife > 0) {
-          // Opponent wins - trigger defeat
-          setLife(player, 0);
-          toast({
-            title: isSecondChance ? '💀 ¡Segunda Oportunidad Fallida!' : '☠️ Castigo Jackpot Completo',
-            description: isSecondChance 
-              ? `${playerLabel}: El segundo Jackpot terminó sin ganar. ¡Derrota automática!`
-              : `${playerLabel}: Castigo completo aplicado. ¡Derrota automática!`,
-            variant: 'destructive',
-          });
-        }
-        
-        // Clear all Jackpot effects
-        setJackpotEffects(prev => ({
-          ...prev,
-          [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-        }));
-      } else {
-        // Reduced punishment - give second chance
-        setLife(player, 5);
-        toast({
-          title: '🟠 Castigo Reducido Aplicado',
-          description: `${playerLabel}: Vida reducida a 5. Descarta tu mano. ¡Última oportunidad con Jackpot!`,
-          variant: 'destructive',
-        });
-        
-        // Reactivate skill for reduced punishment and mark as second chance
-        setActiveSkills(prev => {
-          const currentSkill = prev[player];
-          if (!currentSkill) return prev;
-          return { ...prev, [player]: { ...currentSkill, used: false } };
-        });
-        
-        // Mark as second chance - effects 8 and 9 won't be available
-        setJackpotEffects(prev => ({
-          ...prev,
-          [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: true },
-        }));
-      }
-    }
-    
-    playSound('defeat');
-  }, [pendingLuckPassive, toast, playSound, setLife, stopDomainMusic, jackpotEffects, gameState]);
-
-  // Apply punishment (called when luck fails or manually)
-  const applyPunishment = useCallback((punishment: DomainPunishment) => {
-    const { player, skillId, punishmentType, hasEffect8 } = punishment;
-    const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    
-    // Effect 8 reduces severity: Complete -> Reduced -> Canceled
-    let effectiveType = punishmentType;
-    if (hasEffect8) {
-      if (punishmentType === 'complete') {
-        effectiveType = 'reduced';
-      } else if (punishmentType === 'reduced') {
-        effectiveType = 'canceled';
-      }
-    }
-    
-    // If canceled by effect 8, punishment is anulled and skill REACTIVATES
-    if (effectiveType === 'canceled') {
-      toast({
-        title: '🍀 ¡Reescritura del Azar!',
-        description: `${playerLabel}: El Efecto 8 anuló el castigo. ¡La habilidad puede reactivarse!`,
-      });
-      
-      playSound('skillActivate');
-      
-      // Reactivate the skill
-      setActiveSkills(prev => {
-        const currentSkill = prev[player];
-        if (!currentSkill) return prev;
-        return { ...prev, [player]: { ...currentSkill, used: false } };
-      });
-      
-      // Clear Jackpot effects
-      setJackpotEffects(prev => ({
-        ...prev,
-        [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: prev[player].overflowingLuck, isSecondChance: false },
-      }));
-      return;
-    }
-    
-    // Apply life reduction based on skill and effective punishment type
-    if (skillId === 'jackpot') {
-      if (effectiveType === 'complete') {
-        setLife(player, 1);
-        toast({
-          title: '☠️ Castigo Jackpot Aplicado',
-          description: `${playerLabel}: Vida reducida a 1. Descarta mano, mazo y descarte.`,
-          variant: 'destructive',
-        });
-      } else {
-        setLife(player, 5);
-        toast({
-          title: '🟠 Castigo Reducido Aplicado',
-          description: `${playerLabel}: Vida reducida a 5. Descarta tu mano. Puedes activar Jackpot una vez más.`,
-          variant: 'destructive',
-        });
-        
-        // Reactivate skill for reduced punishment
-        setActiveSkills(prev => {
-          const currentSkill = prev[player];
-          if (!currentSkill) return prev;
-          return { ...prev, [player]: { ...currentSkill, used: false } };
-        });
-      }
-    }
-    
-    // Clear Jackpot effects for this player
-    setJackpotEffects(prev => ({
-      ...prev,
-      [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: prev[player].overflowingLuck },
-    }));
-    
-    playSound('defeat');
-  }, [setLife, toast, playSound]);
-
-  // Auto-update dragon counters on turn change and auto-remove when dead
-  const updateDragonCounters = (currentPlayer: 'player1' | 'player2') => {
+  const updateDragonCounters = useCallback((currentPlayer: 'player1' | 'player2') => {
     const previousPlayer = currentPlayer === 'player1' ? 'player2' : 'player1';
-    const playerLabel = previousPlayer === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    
     setActiveSummons(prev => {
-      const updatePlayerSummons = (summons: ActiveSummon[], isOwner: boolean): ActiveSummon[] => {
-        return summons.map(summon => {
-          if (summon.type === 'dragon' && isOwner) {
-            // Decrease death counter by 1, increase attack by 2
-            const newCounter = Math.max(0, (summon.deathCounter ?? 3) - 1);
-            const newAttack = (summon.attackBonus ?? 0) + 2;
-            
-            return {
-              ...summon,
-              deathCounter: newCounter,
-              attackBonus: newAttack,
-            };
-          }
-          return summon;
-        });
-      };
-
-      // Update dragons for the player whose turn just ended
-      return {
-        player1: updatePlayerSummons(prev.player1, previousPlayer === 'player1'),
-        player2: updatePlayerSummons(prev.player2, previousPlayer === 'player2'),
-      };
+      const updateSummons = (summons: ActiveSummon[], isOwner: boolean): ActiveSummon[] =>
+        summons.map(s => s.type === 'dragon' && isOwner ? { ...s, deathCounter: Math.max(0, (s.deathCounter ?? 3) - 1), attackBonus: (s.attackBonus ?? 0) + 2 } : s);
+      return { player1: updateSummons(prev.player1, previousPlayer === 'player1'), player2: updateSummons(prev.player2, previousPlayer === 'player2') };
     });
-    
-    // Check for dead dragons after state update (need timeout for state to propagate)
+
     setTimeout(() => {
       setActiveSummons(prev => {
-        const deadDragons: { player: 'player1' | 'player2'; }[] = [];
-        
-        (['player1', 'player2'] as const).forEach(p => {
-          prev[p].forEach(summon => {
-            if (summon.type === 'dragon' && (summon.deathCounter ?? 1) <= 0) {
-              deadDragons.push({ player: p });
+        const hasDead = (['player1', 'player2'] as const).some(p => prev[p].some(s => s.type === 'dragon' && (s.deathCounter ?? 1) <= 0));
+        if (hasDead) {
+          (['player1', 'player2'] as const).forEach(p => {
+            if (prev[p].some(s => s.type === 'dragon' && (s.deathCounter ?? 1) <= 0)) {
+              playSound('defeat');
+              toast({ title: "🐉 ¡El Dragón ha muerto!", description: `El Dragón de ${p === 'player1' ? 'Jugador 1' : 'Jugador 2'} ha sido destruido.`, variant: "destructive" });
             }
           });
-        });
-        
-        if (deadDragons.length > 0) {
-          deadDragons.forEach(({ player }) => {
-            const label = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-            playSound('defeat');
-            toast({
-              title: "🐉 ¡El Dragón ha muerto!",
-              description: `El Dragón de ${label} ha sido destruido.`,
-              variant: "destructive",
-            });
-          });
-          
-          // Auto-remove dead dragons
-          return {
-            player1: prev.player1.filter(s => !(s.type === 'dragon' && (s.deathCounter ?? 1) <= 0)),
-            player2: prev.player2.filter(s => !(s.type === 'dragon' && (s.deathCounter ?? 1) <= 0)),
-          };
+          return { player1: prev.player1.filter(s => !(s.type === 'dragon' && (s.deathCounter ?? 1) <= 0)), player2: prev.player2.filter(s => !(s.type === 'dragon' && (s.deathCounter ?? 1) <= 0)) };
         }
-        
         return prev;
       });
     }, 100);
-  };
+  }, [playSound, toast]);
 
-  // Auto-remove Hero and Insects at end of turn
-  const autoRemoveEndOfTurnEntities = (playerEnding: 'player1' | 'player2') => {
+  const autoRemoveEndOfTurnEntities = useCallback((playerEnding: 'player1' | 'player2') => {
     const playerLabel = playerEnding === 'player1' ? 'Jugador 1' : 'Jugador 2';
     const summons = activeSummons[playerEnding];
     const tokens = activeTokens[playerEnding];
-    
-    // Auto-remove Hero
+
     const hasHero = summons.some(s => s.type === 'hero');
     if (hasHero) {
-      setActiveSummons(prev => ({
-        ...prev,
-        [playerEnding]: prev[playerEnding].filter(s => s.type !== 'hero'),
-      }));
+      setActiveSummons(prev => ({ ...prev, [playerEnding]: prev[playerEnding].filter(s => s.type !== 'hero') }));
       playSound('defeat');
-      toast({
-        title: "⚔️ Héroe destruido",
-        description: `El Héroe de ${playerLabel} ha sido destruido al final del turno.`,
-        variant: "destructive",
-      });
+      toast({ title: "⚔️ Héroe destruido", description: `El Héroe de ${playerLabel} ha sido destruido al final del turno.`, variant: "destructive" });
     }
-    
-    // Auto-remove Insects from Reina Insecto
+
     const hasInsects = tokens.some(t => t.type === 'insect');
-    const insectsFromQueen = insectsFromQueenRef.current[playerEnding];
-    
-    if (hasInsects && insectsFromQueen) {
-      setActiveTokens(prev => ({
-        ...prev,
-        [playerEnding]: prev[playerEnding].filter(t => t.type !== 'insect'),
-      }));
+    if (hasInsects && insectsFromQueenRef.current[playerEnding]) {
+      setActiveTokens(prev => ({ ...prev, [playerEnding]: prev[playerEnding].filter(t => t.type !== 'insect') }));
       insectsFromQueenRef.current[playerEnding] = false;
-      
       setTimeout(() => {
         playSound('defeat');
-        toast({
-          title: "🐛 Insectos destruidos",
-          description: `Los Insectos de ${playerLabel} (Reina Insecto) han sido destruidos al final del turno.`,
-          variant: "destructive",
-        });
+        toast({ title: "🐛 Insectos destruidos", description: `Los Insectos de ${playerLabel} (Reina Insecto) han sido destruidos al final del turno.`, variant: "destructive" });
       }, hasHero ? 500 : 0);
     }
-  };
+  }, [activeSummons, activeTokens, playSound, toast]);
 
-  // Handle cooldown reduction on turn end
-  const handleEndTurnWithCooldown = () => {
-    const currentPlayer = gameState.currentPlayer;
-    const nextPlayer = currentPlayer === 'player1' ? 'player2' : 'player1';
-    
-    // Auto-remove entities at end of turn
-    autoRemoveEndOfTurnEntities(currentPlayer);
-    
-    // Reduce Witch Coven cooldowns
-    reduceWitchCovenCooldowns(currentPlayer);
-    
+  const handleEndTurnWithCooldown = useCallback(() => {
+    const current = gameState.currentPlayer;
+    const next = current === 'player1' ? 'player2' : 'player1';
+    autoRemoveEndOfTurnEntities(current);
+    witchCoven.actions.reduceWitchCovenCooldowns(current);
     endTurn();
     reduceCooldowns();
-    updateDragonCounters(nextPlayer);
-    decrementDomainTurns(currentPlayer);
-  };
+    updateDragonCounters(next);
+    decrementDomainTurns(current);
+  }, [gameState.currentPlayer, autoRemoveEndOfTurnEntities, witchCoven.actions, endTurn, reduceCooldowns, updateDragonCounters, decrementDomainTurns]);
 
-  // Handle cooldown reduction on pass phase
-  const handlePassPhaseWithCooldown = () => {
-    const currentPlayer = gameState.currentPlayer;
-    const nextPlayer = currentPlayer === 'player1' ? 'player2' : 'player1';
-    
-    // Auto-remove entities at end of turn
-    autoRemoveEndOfTurnEntities(currentPlayer);
-    
-    // Reduce Witch Coven cooldowns
-    reduceWitchCovenCooldowns(currentPlayer);
-    
+  const handlePassPhaseWithCooldown = useCallback(() => {
+    const current = gameState.currentPlayer;
+    const next = current === 'player1' ? 'player2' : 'player1';
+    autoRemoveEndOfTurnEntities(current);
+    witchCoven.actions.reduceWitchCovenCooldowns(current);
     passPhase();
     reduceCooldowns();
-    updateDragonCounters(nextPlayer);
-    decrementDomainTurns(currentPlayer);
-  };
+    updateDragonCounters(next);
+    decrementDomainTurns(current);
+  }, [gameState.currentPlayer, autoRemoveEndOfTurnEntities, witchCoven.actions, passPhase, reduceCooldowns, updateDragonCounters, decrementDomainTurns]);
 
-  // Handle damage from skills like Contrataque Desesperado
-  // This function also checks if target has "Contraataque Desesperado" for lethal damage
-  const handleApplyDamage = useCallback((targetPlayer: 'player1' | 'player2', damage: number, sourceSkillId?: string) => {
-    const currentTargetLife = gameState[targetPlayer].life;
-    const isLethal = currentTargetLife - damage <= 0;
-    const targetSkill = activeSkills[targetPlayer];
-    
-    // Check if target has "Contraataque Desesperado" (last-breath) and damage is lethal
-    // AND the damage is not coming from last-breath itself (avoid infinite loop)
-    if (isLethal && targetSkill?.id === 'last-breath' && !targetSkill.used && sourceSkillId !== 'last-breath') {
-      // Contraataque Desesperado triggers BEFORE lethal damage is applied
-      // The skill's own dice roll modal will handle the outcome
-      toast({
-        title: '⚠️ ¡Contraataque Desesperado Activado!',
-        description: `${targetPlayer === 'player1' ? 'Jugador 1' : 'Jugador 2'} activa su Contraataque ante el daño letal.`,
-      });
-      // The LastBreathModal handles this flow - we need to trigger it
-      // For now, just apply the damage since the skill handles its own activation
-    }
-    
-    updateLife(targetPlayer, -damage);
-  }, [gameState, activeSkills, toast, updateLife]);
-  
-  // Handle Witch Coven (Cacería del Aquelarre Absoluto) activation and management
-  const handleOpenWitchCovenModal = useCallback((player: 'player1' | 'player2') => {
-    setWitchCovenPlayer(player);
-    setShowWitchCovenModal(true);
-  }, []);
-  
-  const handleUpdateWitchCovenState = useCallback((player: 'player1' | 'player2', state: WitchCovenState) => {
-    setWitchCovenState(prev => ({
-      ...prev,
-      [player]: state,
-    }));
-  }, []);
-  
-  const handleActivateWitchCoven = useCallback((player: 'player1' | 'player2') => {
-    const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    const playerTurnCount = player === 'player1' ? gameState.player1TurnCount : gameState.player2TurnCount;
-    
-    // NO marcamos la habilidad como usada - el botón debe seguir disponible
-    // para acceder al modal de gestión del Aquelarre (brujas, Caldero, Conjuro)
-    
-    // Create permanent domain for Witch Coven
-    const newDomain: ActiveDomain = {
-      id: `witch-coven-${Date.now()}`,
-      skillId: 'witch-coven',
-      skillName: 'Cacería del Aquelarre Absoluto',
-      turnsRemaining: 999, // Permanent
-      activeEffects: ['Caldero Negro (3 daño × bruja)', 'Conjuro de la Bruja Madre'],
-      player,
-    };
-    
-    setActiveDomains(prev => ({
-      ...prev,
-      [player]: [...prev[player], newDomain],
-    }));
-    
-    // Actualizar estado del coven como activo
-    setWitchCovenState(prev => ({
-      ...prev,
-      [player]: {
-        ...prev[player],
-        isActive: true,
-        activatedTurn: playerTurnCount,
-      },
-    }));
-    
-    playSound('skillActivate');
-    toast({
-      title: '🔥 ¡Aquelarre Absoluto Activado!',
-      description: `${playerLabel}: Dominio permanente. Todas las brujas cuentan para el Caldero Negro.`,
-    });
-  }, [gameState.player1TurnCount, gameState.player2TurnCount, playSound, toast]);
-  
-  const handleUseCalderon = useCallback((player: 'player1' | 'player2', totalDamage: number) => {
-    const targetPlayer = player === 'player1' ? 'player2' : 'player1';
-    const targetLabel = targetPlayer === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    const covenState = witchCovenState[player];
-    const totalWitches = covenState.witchCount.field + covenState.witchCount.hand + 
-                         covenState.witchCount.graveyard + covenState.witchCount.averno;
-    
-    // Check if target has "Contraataque Desesperado" for lethal damage
-    const targetLife = gameState[targetPlayer].life;
-    const isLethal = targetLife - totalDamage <= 0;
-    const targetSkill = activeSkills[targetPlayer];
-    
-    // If lethal and target has unused Contraataque Desesperado, trigger passive
-    if (isLethal && targetSkill?.id === 'last-breath' && !targetSkill.used) {
-      // Store pending damage and trigger LastBreath modal as PASSIVE
-      setPendingLastBreath({
-        targetPlayer,
-        sourcePlayer: player,
-        pendingDamage: totalDamage,
-        source: 'calderon',
-      });
-      setShowLastBreathFromPassive(true);
-      setShowWitchCovenModal(false);
-      
-      toast({
-        title: '⚡ ¡Pasiva Activada!',
-        description: `${targetLabel} activa Contraataque Desesperado como respuesta al daño letal del Caldero Negro.`,
-      });
-      return; // Don't apply damage yet - wait for LastBreath resolution
-    }
-    
-    // Apply damage normally if no passive triggered
-    handleApplyDamage(targetPlayer, totalDamage, 'witch-coven');
-    
-    setShowWitchCovenModal(false);
-    playSound('skillActivate');
-    toast({
-      title: '🔥 ¡Caldero Negro Activado!',
-      description: `${playerLabel} inflige ${totalDamage} daño directo a ${targetLabel} (${totalWitches} brujas × 3).`,
-    });
-  }, [witchCovenState, gameState, activeSkills, handleApplyDamage, playSound, toast]);
-  
-  // Handle LastBreath completion from passive trigger (Caldero Negro lethal damage)
-  const handleLastBreathPassiveComplete = useCallback((result: { winner: 'player1' | 'player2'; loser: 'player1' | 'player2'; damage: number }) => {
-    if (!pendingLastBreath) return;
-    
-    const { targetPlayer, sourcePlayer, pendingDamage } = pendingLastBreath;
-    const targetLabel = targetPlayer === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    const sourceLabel = sourcePlayer === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    
-    // Mark the skill as USED (consumes the passive)
-    setActiveSkills(prev => {
-      const currentSkill = prev[targetPlayer];
-      if (!currentSkill) return prev;
-      return { ...prev, [targetPlayer]: { ...currentSkill, used: true } };
-    });
-    
-    // Apply damage to the LOSER from the dice roll
-    updateLife(result.loser, -result.damage);
-    
-    // If the target (who triggered passive) WINS, the Caldero damage is NOT applied
-    // If the target LOSES, they still take the LastBreath damage (already applied above)
-    // But the original Caldero damage is now resolved through LastBreath
-    
-    if (result.winner === targetPlayer) {
-      // Target won the dice roll - they successfully countered
-      toast({
-        title: '⚔️ ¡Contraataque Exitoso!',
-        description: `${targetLabel} ganó el duelo. ${sourceLabel} recibe ${result.damage} de daño reflejado.`,
-      });
-    } else {
-      // Target lost the dice roll - they take the modified damage
-      toast({
-        title: '💀 Contraataque Fallido',
-        description: `${targetLabel} perdió el duelo y recibe ${result.damage} de daño.`,
-        variant: 'destructive',
-      });
-    }
-    
-    playSound('diceResult');
-    setPendingLastBreath(null);
-    setShowLastBreathFromPassive(false);
-  }, [pendingLastBreath, updateLife, playSound, toast]);
-  
-  const handleUseMotherWitchSpell = useCallback((player: 'player1' | 'player2') => {
-    setMotherWitchPlayer(player);
-    setShowMotherWitchResult(true);
-    setShowWitchCovenModal(false);
-    
-    toast({
-      title: '🧙‍♀️ Conjuro de la Bruja Madre',
-      description: `Roba 3 cartas y verifica si aparece el Caldero Negro.`,
-    });
-  }, [toast]);
-  
-  const handleMotherWitchResult = useCallback((success: boolean) => {
-    if (!motherWitchPlayer) return;
-    
-    const player = motherWitchPlayer;
-    const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-    
-    if (success) {
-      // Caldero Negro appeared - increase treasure limit permanently
-      // NO hay cooldown si fue éxito - se puede usar de nuevo inmediatamente
-      setWitchCovenState(prev => ({
-        ...prev,
-        [player]: {
-          ...prev[player],
-          treasureLimit: prev[player].treasureLimit + 2,
-          motherWitchCooldown: 1, // Cooldown de 1 turno en éxito
-        },
-      }));
-      
-      playSound('skillActivate');
-      toast({
-        title: '✨ Conjuro Realizado',
-        description: `${playerLabel}: ¡Caldero Negro encontrado! Límite de tesoros +2. Conjuro disponible de nuevo.`,
-      });
-    } else {
-      // Caldero Negro didn't appear - lose 3 life, discard 1 treasure
-      // Aplica cooldown de 3 turnos solo cuando falla
-      setWitchCovenState(prev => ({
-        ...prev,
-        [player]: {
-          ...prev[player],
-          motherWitchCooldown: 3, // Cooldown solo en fallo
-        },
-      }));
-      
-      handleApplyDamage(player, 3, 'witch-coven');
-      
-      playSound('defeat');
-      toast({
-        title: '❌ Conjuro Fallido',
-        description: `${playerLabel}: Pierdes 3 vida y 1 tesoro. Enfriamiento: 3 turnos.`,
-        variant: 'destructive',
-      });
-    }
-    
-    setShowMotherWitchResult(false);
-    setMotherWitchPlayer(null);
-  }, [motherWitchPlayer, handleApplyDamage, playSound, toast]);
-  
-  // Reduce Mother Witch cooldown on turn end
-  const reduceWitchCovenCooldowns = useCallback((playerEnding: 'player1' | 'player2') => {
-    setWitchCovenState(prev => ({
-      ...prev,
-      [playerEnding]: {
-        ...prev[playerEnding],
-        motherWitchCooldown: Math.max(0, prev[playerEnding].motherWitchCooldown - 1),
-      },
-    }));
+  // Summon/Token/Domain management
+  const handleAddSummon = useCallback((player: 'player1' | 'player2', summon: Omit<ActiveSummon, 'id'>) => {
+    setActiveSummons(prev => ({ ...prev, [player]: [...prev[player], { ...summon, id: `${summon.type}-${Date.now()}` }] }));
   }, []);
 
-  // Summon management
-  const handleAddSummon = (player: 'player1' | 'player2', summon: Omit<ActiveSummon, 'id'>) => {
-    const newSummon: ActiveSummon = {
-      ...summon,
-      id: `${summon.type}-${Date.now()}`,
-    };
-    setActiveSummons(prev => ({
-      ...prev,
-      [player]: [...prev[player], newSummon],
-    }));
-  };
+  const handleUpdateSummon = useCallback((player: 'player1' | 'player2', summonId: string, updates: Partial<ActiveSummon>) => {
+    setActiveSummons(prev => ({ ...prev, [player]: prev[player].map(s => s.id === summonId ? { ...s, ...updates } : s) }));
+  }, []);
 
-  const handleUpdateSummon = (player: 'player1' | 'player2', summonId: string, updates: Partial<ActiveSummon>) => {
-    setActiveSummons(prev => ({
-      ...prev,
-      [player]: prev[player].map(s => 
-        s.id === summonId ? { ...s, ...updates } : s
-      ),
-    }));
-  };
+  const handleRemoveSummon = useCallback((player: 'player1' | 'player2', summonId: string) => {
+    setActiveSummons(prev => ({ ...prev, [player]: prev[player].filter(s => s.id !== summonId) }));
+  }, []);
 
-  const handleRemoveSummon = (player: 'player1' | 'player2', summonId: string) => {
-    setActiveSummons(prev => ({
-      ...prev,
-      [player]: prev[player].filter(s => s.id !== summonId),
-    }));
-  };
-
-  // Token management
-  const handleAddToken = (player: 'player1' | 'player2', type: TokenType) => {
+  const handleAddToken = useCallback((player: 'player1' | 'player2', type: TokenType) => {
     setActiveTokens(prev => {
       const existing = prev[player].find(t => t.type === type);
-      if (existing) {
-        return {
-          ...prev,
-          [player]: prev[player].map(t => 
-            t.type === type ? { ...t, count: t.count + 1 } : t
-          ),
-        };
-      }
-      return {
-        ...prev,
-        [player]: [...prev[player], { type, count: 1 }],
-      };
+      if (existing) return { ...prev, [player]: prev[player].map(t => t.type === type ? { ...t, count: t.count + 1 } : t) };
+      return { ...prev, [player]: [...prev[player], { type, count: 1 }] };
     });
-  };
+  }, []);
 
-  const handleUpdateToken = (player: 'player1' | 'player2', type: TokenType, count: number) => {
-    if (count <= 0) {
-      handleRemoveToken(player, type);
-      return;
-    }
-    setActiveTokens(prev => ({
-      ...prev,
-      [player]: prev[player].map(t => 
-        t.type === type ? { ...t, count } : t
-      ),
-    }));
-  };
+  const handleUpdateToken = useCallback((player: 'player1' | 'player2', type: TokenType, count: number) => {
+    if (count <= 0) { handleRemoveToken(player, type); return; }
+    setActiveTokens(prev => ({ ...prev, [player]: prev[player].map(t => t.type === type ? { ...t, count } : t) }));
+  }, []);
 
-  const handleRemoveToken = (player: 'player1' | 'player2', type: TokenType) => {
-    if (type === 'insect') {
-      insectsFromQueenRef.current[player] = false;
-    }
-    
-    setActiveTokens(prev => ({
-      ...prev,
-      [player]: prev[player].filter(t => t.type !== type),
-    }));
-  };
+  const handleRemoveToken = useCallback((player: 'player1' | 'player2', type: TokenType) => {
+    if (type === 'insect') insectsFromQueenRef.current[player] = false;
+    setActiveTokens(prev => ({ ...prev, [player]: prev[player].filter(t => t.type !== type) }));
+  }, []);
 
-  // Domain management
-  const handleUpdateDomain = (player: 'player1' | 'player2', domainId: string, turnsRemaining: number) => {
-    setActiveDomains(prev => ({
-      ...prev,
-      [player]: prev[player].map(d => 
-        d.id === domainId ? { ...d, turnsRemaining } : d
-      ),
-    }));
-  };
+  const handleUpdateDomain = useCallback((player: 'player1' | 'player2', domainId: string, turnsRemaining: number) => {
+    setActiveDomains(prev => ({ ...prev, [player]: prev[player].map(d => d.id === domainId ? { ...d, turnsRemaining } : d) }));
+  }, []);
 
-  const handleRemoveDomain = (player: 'player1' | 'player2', domainId: string) => {
-    setActiveDomains(prev => ({
-      ...prev,
-      [player]: prev[player].filter(d => d.id !== domainId),
-    }));
-  };
+  const handleRemoveDomain = useCallback((player: 'player1' | 'player2', domainId: string) => {
+    setActiveDomains(prev => ({ ...prev, [player]: prev[player].filter(d => d.id !== domainId) }));
+  }, []);
 
-  const handleExitGame = () => {
-    // Stop domain music when exiting
-    stopDomainMusic();
-    
-    exitToSetup();
+  const resetAllState = useCallback(() => {
     setActiveSkills({ player1: null, player2: null });
     setActiveSummons({ player1: [], player2: [] });
     setActiveTokens({ player1: [], player2: [] });
     setActiveDomains({ player1: [], player2: [] });
     setSkillHistory({ player1: [], player2: [] });
-    setJackpotEffects({
-      player1: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-      player2: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-    });
-    setWitchCovenState({
-      player1: { ...initialCovenState },
-      player2: { ...initialCovenState },
-    });
+    jackpot.actions.resetJackpot();
+    witchCoven.actions.resetWitchCoven();
     insectsFromQueenRef.current = { player1: false, player2: false };
-    setCurrentPhase('setup');
-  };
+  }, [jackpot.actions, witchCoven.actions]);
 
-  const handleResetGame = () => {
-    // Stop domain music when resetting
+  const handleExitGame = useCallback(() => {
     stopDomainMusic();
-    
+    exitToSetup();
+    resetAllState();
+    setCurrentPhase('setup');
+  }, [stopDomainMusic, exitToSetup, resetAllState]);
+
+  const handleResetGame = useCallback(() => {
+    stopDomainMusic();
     setPendingGame({
       life: gameState.initialLife,
       timerMinutes: gameState.timerDuration > 0 ? gameState.timerDuration / 60 : null,
       skillsMode: activeSkills.player1 !== null || activeSkills.player2 !== null || (pendingGame?.skillsMode ?? false),
     });
-    setActiveSkills({ player1: null, player2: null });
-    setActiveSummons({ player1: [], player2: [] });
-    setActiveTokens({ player1: [], player2: [] });
-    setActiveDomains({ player1: [], player2: [] });
-    setSkillHistory({ player1: [], player2: [] });
-    setJackpotEffects({
-      player1: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-      player2: { hasEffect8: false, hasEffect9: false, overflowingLuck: false, isSecondChance: false },
-    });
-    setWitchCovenState({
-      player1: { ...initialCovenState },
-      player2: { ...initialCovenState },
-    });
-    insectsFromQueenRef.current = { player1: false, player2: false };
+    resetAllState();
     setCurrentPhase('dice');
-  };
+  }, [stopDomainMusic, gameState, activeSkills, pendingGame, resetAllState]);
+
+  // Punishment canceled handler
+  const handlePunishmentCanceled = useCallback((punishment: any) => {
+    if (!punishment.hasEffect8 || punishment.punishmentType !== 'reduced' || punishment.skillId !== 'jackpot') return;
+    const player = punishment.player;
+    stopDomainMusic();
+    toast({ title: '🍀 ¡Reescritura del Azar!', description: `${player === 'player1' ? 'Jugador 1' : 'Jugador 2'}: El Efecto 8 anuló el castigo. ¡Jackpot se reactiva!` });
+    setActiveSkills(prev => {
+      const s = prev[player];
+      if (!s) return prev;
+      return { ...prev, [player]: { ...s, used: false } };
+    });
+    jackpot.actions.setJackpotEffects(prev => ({
+      ...prev,
+      [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: prev[player].overflowingLuck, isSecondChance: false },
+    }));
+  }, [stopDomainMusic, toast, jackpot.actions]);
+
+  // Memoize color HSLs
+  const p1ColorHsl = useMemo(() => getColorHsl(playerColors.player1), [playerColors.player1]);
+  const p2ColorHsl = useMemo(() => getColorHsl(playerColors.player2), [playerColors.player2]);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-background">
       <AnimatePresence mode="wait">
-        {currentPhase === 'setup' && (
-          <SetupScreen key="setup" onStart={handleSetupComplete} />
-        )}
-        {currentPhase === 'dice' && (
-          <DiceRoll key="dice" onComplete={handleDiceComplete} />
-        )}
+        {currentPhase === 'setup' && <SetupScreen key="setup" onStart={handleSetupComplete} />}
+        {currentPhase === 'dice' && <DiceRoll key="dice" onComplete={handleDiceComplete} />}
         {currentPhase === 'skills' && pendingGame && (
-          <SkillSelection 
-            key="skills" 
-            onComplete={handleSkillsComplete} 
-            diceWinner={pendingGame.diceWinner}
-          />
+          <SkillSelection key="skills" onComplete={handleSkillsComplete} diceWinner={pendingGame.diceWinner} />
         )}
         {currentPhase === 'game' && gameState.gameStarted && (
           <GameScreen
@@ -1492,150 +483,54 @@ const Index = () => {
             onRemoveDomain={handleRemoveDomain}
             player1SkillHistory={skillHistory.player1}
             player2SkillHistory={skillHistory.player2}
-            player1Color={getColorHsl(playerColors.player1)}
-            player2Color={getColorHsl(playerColors.player2)}
-            player1HasOverflowingLuck={jackpotEffects.player1.overflowingLuck}
-            player2HasOverflowingLuck={jackpotEffects.player2.overflowingLuck}
-            player1IsSecondChance={jackpotEffects.player1.isSecondChance}
-            player2IsSecondChance={jackpotEffects.player2.isSecondChance}
+            player1Color={p1ColorHsl}
+            player2Color={p2ColorHsl}
+            player1HasOverflowingLuck={jackpot.state.jackpotEffects.player1.overflowingLuck}
+            player2HasOverflowingLuck={jackpot.state.jackpotEffects.player2.overflowingLuck}
+            player1IsSecondChance={jackpot.state.jackpotEffects.player1.isSecondChance}
+            player2IsSecondChance={jackpot.state.jackpotEffects.player2.isSecondChance}
           />
         )}
       </AnimatePresence>
 
-      {/* Jackpot Dice Roll Modal */}
-      {pendingDomain && (
-        <JackpotDiceRoll
-          isOpen={showJackpotModal}
-          onClose={() => {
-            setShowJackpotModal(false);
-            setPendingDomain(null);
-          }}
-          onComplete={handleDomainDiceComplete}
-          player={pendingDomain.player}
-          isRotated={pendingDomain.player === 'player2'}
-          isSecondChance={jackpotEffects[pendingDomain.player].isSecondChance}
-        />
-      )}
-
-      {/* Insect Queen Modal */}
-      {pendingInsectQueen && (
-        <InsectQueenModal
-          isOpen={showInsectQueenModal}
-          onClose={() => {
-            setShowInsectQueenModal(false);
-            setPendingInsectQueen(null);
-          }}
-          onComplete={handleInsectQueenComplete}
-          player={pendingInsectQueen.player}
-          isRotated={pendingInsectQueen.player === 'player2'}
-        />
-      )}
-
-      {/* Domain Punishment Modal - Shows FIRST, then "Probar Suerte" triggers dice */}
-      <DomainPunishmentModal
-        isOpen={showPunishmentModal}
-        punishment={pendingPunishment}
-        onClose={() => {
-          setShowPunishmentModal(false);
-          setPendingPunishment(null);
-        }}
-        onTryLuck={handleTryLuck}
-        onCanceled={(punishment) => {
-          // When Effect 8 reduces Reduced -> Canceled, the modal shows "Castigo Anulado".
-          // In that path there's no luck roll, so we must reactivate Jackpot here.
-          if (!punishment.hasEffect8) return;
-          if (punishment.punishmentType !== 'reduced') return;
-          if (punishment.skillId !== 'jackpot') return;
-
-          const player = punishment.player;
-          const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-
-          stopDomainMusic();
-          toast({
-            title: '🍀 ¡Reescritura del Azar!',
-            description: `${playerLabel}: El Efecto 8 anuló el castigo. ¡Jackpot se reactiva!`,
-          });
-
-          setActiveSkills(prev => {
-            const currentSkill = prev[player];
-            if (!currentSkill) return prev;
-            return { ...prev, [player]: { ...currentSkill, used: false } };
-          });
-
-          setJackpotEffects(prev => ({
-            ...prev,
-            [player]: { hasEffect8: false, hasEffect9: false, overflowingLuck: prev[player].overflowingLuck, isSecondChance: false },
-          }));
-        }}
-        isRotated={pendingPunishment?.player === 'player2'}
+      <GameModalsContainer
+        pendingDomain={jackpot.state.pendingDomain}
+        showJackpotModal={jackpot.state.showJackpotModal}
+        onCloseJackpot={() => { jackpot.actions.setShowJackpotModal(false); jackpot.actions.setPendingDomain(null); }}
+        onJackpotComplete={jackpot.actions.handleDomainDiceComplete}
+        jackpotIsSecondChance={jackpot.state.pendingDomain ? jackpot.state.jackpotEffects[jackpot.state.pendingDomain.player].isSecondChance : false}
+        pendingInsectQueen={jackpot.state.pendingInsectQueen}
+        showInsectQueenModal={jackpot.state.showInsectQueenModal}
+        onCloseInsectQueen={() => { jackpot.actions.setShowInsectQueenModal(false); jackpot.actions.setPendingInsectQueen(null); }}
+        onInsectQueenComplete={jackpot.actions.handleInsectQueenComplete}
+        showPunishmentModal={jackpot.state.showPunishmentModal}
+        pendingPunishment={jackpot.state.pendingPunishment}
+        onClosePunishment={() => { jackpot.actions.setShowPunishmentModal(false); jackpot.actions.setPendingPunishment(null); }}
+        onTryLuck={jackpot.actions.handleTryLuck}
+        onPunishmentCanceled={handlePunishmentCanceled}
+        showLuckPassiveModal={jackpot.state.showLuckPassiveModal}
+        pendingLuckPassive={jackpot.state.pendingLuckPassive}
+        onCloseLuckPassive={() => { jackpot.actions.setShowLuckPassiveModal(false); jackpot.actions.setPendingLuckPassive(null); }}
+        onLuckPassiveResult={jackpot.actions.handleLuckPassiveResult}
+        showWitchCovenModal={witchCoven.state.showWitchCovenModal}
+        witchCovenPlayer={witchCoven.state.witchCovenPlayer}
+        witchCovenState={witchCoven.state.witchCovenState}
+        playerTurnCounts={{ player1: gameState.player1TurnCount, player2: gameState.player2TurnCount }}
+        playerLives={{ player1: gameState.player1.life, player2: gameState.player2.life }}
+        playerColors={playerColors}
+        onCloseWitchCoven={() => { witchCoven.actions.setShowWitchCovenModal(false); witchCoven.actions.setWitchCovenPlayer(null); }}
+        onUpdateCovenState={witchCoven.actions.handleUpdateWitchCovenState}
+        onActivateCoven={witchCoven.actions.handleActivateWitchCoven}
+        onUseCalderon={witchCoven.actions.handleUseCalderon}
+        onUseMotherWitchSpell={witchCoven.actions.handleUseMotherWitchSpell}
+        showMotherWitchResult={witchCoven.state.showMotherWitchResult}
+        motherWitchPlayer={witchCoven.state.motherWitchPlayer}
+        onCloseMotherWitch={() => { witchCoven.actions.setShowMotherWitchResult(false); }}
+        onMotherWitchResult={witchCoven.actions.handleMotherWitchResult}
+        showLastBreathFromPassive={witchCoven.state.showLastBreathFromPassive}
+        pendingLastBreath={witchCoven.state.pendingLastBreath}
+        onLastBreathComplete={witchCoven.actions.handleLastBreathPassiveComplete}
       />
-
-      {/* Luck Passive Modal - Triggered by "Probar Suerte" */}
-      {pendingLuckPassive && (
-        <LuckPassiveModal
-          isOpen={showLuckPassiveModal}
-          onClose={() => {
-            // IMPORTANT: Do not auto-apply punishment on close.
-            // The modal's confirm action already calls onResult(success).
-            // If we applied punishment here, we'd risk a double-call where a
-            // successful roll is immediately followed by a "false" close.
-            setShowLuckPassiveModal(false);
-            setPendingLuckPassive(null);
-          }}
-          onResult={handleLuckPassiveResult}
-          skillName={pendingLuckPassive.skillName}
-          player={pendingLuckPassive.player}
-          isRotated={pendingLuckPassive.player === 'player2'}
-          luckPercentage={pendingLuckPassive.luckPercentage}
-        />
-      )}
-
-      {/* Witch Coven Modal (Cacería del Aquelarre Absoluto) */}
-      {witchCovenPlayer && (
-        <WitchCovenModal
-          isOpen={showWitchCovenModal}
-          onClose={() => {
-            setShowWitchCovenModal(false);
-            setWitchCovenPlayer(null);
-          }}
-          player={witchCovenPlayer}
-          playerTurnCount={witchCovenPlayer === 'player1' ? gameState.player1TurnCount : gameState.player2TurnCount}
-          covenState={witchCovenState[witchCovenPlayer]}
-          onUpdateCovenState={(state) => handleUpdateWitchCovenState(witchCovenPlayer, state)}
-          onActivateCoven={() => handleActivateWitchCoven(witchCovenPlayer)}
-          onUseCalderon={(damage) => handleUseCalderon(witchCovenPlayer, damage)}
-          onUseMotherWitchSpell={() => handleUseMotherWitchSpell(witchCovenPlayer)}
-          currentLife={gameState[witchCovenPlayer].life}
-          customColor={witchCovenPlayer === 'player1' ? playerColors.player1 : playerColors.player2}
-        />
-      )}
-
-      {/* Mother Witch Result Modal */}
-      {motherWitchPlayer && (
-        <MotherWitchResultModal
-          isOpen={showMotherWitchResult}
-          onClose={() => {
-            setShowMotherWitchResult(false);
-            setMotherWitchPlayer(null);
-          }}
-          onConfirmResult={handleMotherWitchResult}
-          player={motherWitchPlayer}
-        />
-      )}
-
-      {/* LastBreath Passive Modal (triggered by Caldero Negro lethal damage) */}
-      {pendingLastBreath && (
-        <LastBreathModal
-          isOpen={showLastBreathFromPassive}
-          onClose={() => {
-            // Cannot close during passive - must resolve
-          }}
-          onComplete={handleLastBreathPassiveComplete}
-          player={pendingLastBreath.targetPlayer}
-          currentLife={gameState[pendingLastBreath.targetPlayer].life}
-          initialDamage={pendingLastBreath.pendingDamage}
-        />
-      )}
     </div>
   );
 };
