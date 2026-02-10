@@ -363,9 +363,7 @@ export const PlayerZone = ({
               exit={{ scale: 0, opacity: 0 }}
               className={`w-2 h-2 rounded-full ${turnIndicatorColor}`}
               style={{
-                boxShadow: player === 'player1' 
-                  ? '0 0 8px hsl(40 90% 50%)' 
-                  : '0 0 8px hsl(210 80% 55%)',
+                boxShadow: `0 0 8px hsl(var(--${player}))`,
               }}
             />
           )}

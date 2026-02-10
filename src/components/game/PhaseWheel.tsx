@@ -60,9 +60,11 @@ export const PhaseWheel = ({
         <motion.div
           className={`w-10 h-10 rounded-full ${playerBg} flex items-center justify-center font-display font-bold text-sm text-primary-foreground`}
           animate={{ 
-            boxShadow: currentPlayer === 'player1' 
-              ? ['0 0 10px hsl(40 90% 50% / 0.3)', '0 0 25px hsl(40 90% 50% / 0.6)', '0 0 10px hsl(40 90% 50% / 0.3)']
-              : ['0 0 10px hsl(210 80% 55% / 0.3)', '0 0 25px hsl(210 80% 55% / 0.6)', '0 0 10px hsl(210 80% 55% / 0.3)']
+            boxShadow: [
+              `0 0 10px hsl(var(--${currentPlayer}) / 0.3)`,
+              `0 0 25px hsl(var(--${currentPlayer}) / 0.6)`,
+              `0 0 10px hsl(var(--${currentPlayer}) / 0.3)`,
+            ]
           }}
           transition={{ duration: 2, repeat: Infinity }}
         >

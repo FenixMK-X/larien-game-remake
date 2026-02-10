@@ -57,12 +57,17 @@ export const useGameColors = ({ player1Color, player2Color, currentPlayer }: Use
       root.style.setProperty('--player1', p1Hsl);
       root.style.setProperty('--player1-glow', generateGlow(p1Parsed.h, p1Parsed.s, p1Parsed.l));
       root.style.setProperty('--player1-bg', generateBg(p1Parsed.h, p1Parsed.s));
+      // Update gradient for zone backgrounds
+      root.style.setProperty('--gradient-player1', `linear-gradient(135deg, hsl(${p1Parsed.h} ${Math.max(20, p1Parsed.s - 50)}% 15%), hsl(${p1Parsed.h} ${Math.max(15, p1Parsed.s - 60)}% 8%))`);
+      root.style.setProperty('--shadow-glow-player1', `0 0 30px hsl(${p1Hsl} / 0.3)`);
     }
     
     if (p2Parsed) {
       root.style.setProperty('--player2', p2Hsl);
       root.style.setProperty('--player2-glow', generateGlow(p2Parsed.h, p2Parsed.s, p2Parsed.l));
       root.style.setProperty('--player2-bg', generateBg(p2Parsed.h, p2Parsed.s));
+      root.style.setProperty('--gradient-player2', `linear-gradient(135deg, hsl(${p2Parsed.h} ${Math.max(20, p2Parsed.s - 50)}% 15%), hsl(${p2Parsed.h} ${Math.max(15, p2Parsed.s - 60)}% 8%))`);
+      root.style.setProperty('--shadow-glow-player2', `0 0 30px hsl(${p2Hsl} / 0.3)`);
     }
     
     // Set active player variable for reactive elements
