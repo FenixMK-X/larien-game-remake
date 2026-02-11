@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { WarGodPanel } from './WarGodPanel';
 import { LifeCounter } from './LifeCounter';
 import { LastBreathModal } from './LastBreathModal';
 import { SummonTracker, ActiveSummon } from './SummonTracker';
 import { TokenType, TOKEN_TYPES } from './TokenCounter';
 import { 
   Sparkles, X, Pickaxe, Lamp, Info, Zap, Bug,
-  Skull, Sword, Flame, Mountain, Scale, Car, Heart, Clock, Lock, Plus,
+  Skull, Sword, Flame, Mountain, Scale, Car, Heart, Clock, Lock, Plus, Shield,
   DoorOpen, Coins, Target, Dices, ChevronDown
 } from 'lucide-react';
 import type { Player } from '@/hooks/useGameState';
@@ -43,7 +44,13 @@ interface PlayerZoneProps {
   activeDomain?: ActiveDomain | null;
   isSecondChance?: boolean;
   hasOverflowingLuck?: boolean;
-  playerTurnCount?: number; // Turnos del jugador específico (para restricción 3 turnos)
+  playerTurnCount?: number;
+  warGodState?: import('@/hooks/useWarGod').WarGodState | null;
+  warGodAvailableDecrees?: import('@/hooks/useWarGod').DecreeType[];
+  onWarGodDecree?: (decree: import('@/hooks/useWarGod').DecreeType) => void;
+  warGodDamageReduction?: number;
+  warGodMinDamage?: number;
+  warGodBonusDamage?: number;
 }
 
 const getSkillIcon = (iconType: Skill['icon']) => {
@@ -62,6 +69,7 @@ const getSkillIcon = (iconType: Skill['icon']) => {
     case 'dollars': return Coins;
     case 'destiny': return Target;
     case 'jackpot': return Dices;
+    case 'wargod': return Shield;
     default: return Info;
   }
 };
@@ -87,6 +95,12 @@ export const PlayerZone = ({
   isSecondChance = false,
   hasOverflowingLuck = false,
   playerTurnCount = 0,
+  warGodState = null,
+  warGodAvailableDecrees = [],
+  onWarGodDecree,
+  warGodDamageReduction = 0,
+  warGodMinDamage = 1,
+  warGodBonusDamage = 0,
 }: PlayerZoneProps) => {
   const [showSkillModal, setShowSkillModal] = useState(false);
   const [showActivationEffect, setShowActivationEffect] = useState(false);
@@ -463,6 +477,24 @@ export const PlayerZone = ({
           )}
         </AnimatePresence>
       </div>
+
+      {/* War God Panel - War Points Indicator */}
+      {warGodState && warGodState.isActive && onWarGodDecree && (
+        <div className={`absolute ${isRotated ? 'bottom-3' : 'top-3'} left-1/2 -translate-x-1/2 z-10`}>
+          <WarGodPanel
+            state={warGodState}
+            player={player}
+            isCurrentTurn={isCurrentTurn}
+            isRotated={isRotated}
+            availableDecrees={warGodAvailableDecrees}
+            onUseDecree={onWarGodDecree}
+            damageReduction={warGodDamageReduction}
+            minDamage={warGodMinDamage}
+            bonusDamage={warGodBonusDamage}
+            playerTurnCount={playerTurnCount}
+          />
+        </div>
+      )}
 
       {/* Skill Button - Only show if skill exists */}
       {skill && (
