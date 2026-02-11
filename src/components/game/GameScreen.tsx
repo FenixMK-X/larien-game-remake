@@ -14,6 +14,7 @@ import { AnimatedBackground } from './AnimatedBackground';
 import { RotateCcw, X, Hash } from 'lucide-react';
 import type { GameState, Player } from '@/hooks/useGameState';
 import type { Skill } from './SkillSelection';
+import type { WarGodState, DecreeType } from '@/hooks/useWarGod';
 import { useGameSounds } from '@/hooks/useSound';
 import { useGameColors } from '@/hooks/useGameColors';
 
@@ -54,6 +55,13 @@ interface GameScreenProps {
   player2HasOverflowingLuck?: boolean;
   player1IsSecondChance?: boolean;
   player2IsSecondChance?: boolean;
+  player1WarGodState?: WarGodState | null;
+  player2WarGodState?: WarGodState | null;
+  onWarGodDecree?: (player: Player, decree: DecreeType) => void;
+  warGodGetAvailableDecrees?: (player: Player) => DecreeType[];
+  warGodGetDamageReduction?: (player: Player) => number;
+  warGodGetMinDamage?: (player: Player) => number;
+  warGodGetBonusDamage?: (player: Player) => number;
 }
 
 export const GameScreen = ({
@@ -93,6 +101,13 @@ export const GameScreen = ({
   player2HasOverflowingLuck = false,
   player1IsSecondChance = false,
   player2IsSecondChance = false,
+  player1WarGodState = null,
+  player2WarGodState = null,
+  onWarGodDecree,
+  warGodGetAvailableDecrees,
+  warGodGetDamageReduction,
+  warGodGetMinDamage,
+  warGodGetBonusDamage,
 }: GameScreenProps) => {
   const { playSound } = useGameSounds();
   const prevState = useRef(gameState);
@@ -251,6 +266,12 @@ export const GameScreen = ({
           isSecondChance={player2IsSecondChance}
           hasOverflowingLuck={player2HasOverflowingLuck}
           playerTurnCount={gameState.player2TurnCount}
+          warGodState={player2WarGodState}
+          warGodAvailableDecrees={warGodGetAvailableDecrees?.('player2') || []}
+          onWarGodDecree={onWarGodDecree ? (decree) => onWarGodDecree('player2', decree) : undefined}
+          warGodDamageReduction={warGodGetDamageReduction?.('player2') || 0}
+          warGodMinDamage={warGodGetMinDamage?.('player2') ?? 1}
+          warGodBonusDamage={warGodGetBonusDamage?.('player2') || 0}
         />
       </div>
 
@@ -454,6 +475,12 @@ export const GameScreen = ({
           isSecondChance={player1IsSecondChance}
           hasOverflowingLuck={player1HasOverflowingLuck}
           playerTurnCount={gameState.player1TurnCount}
+          warGodState={player1WarGodState}
+          warGodAvailableDecrees={warGodGetAvailableDecrees?.('player1') || []}
+          onWarGodDecree={onWarGodDecree ? (decree) => onWarGodDecree('player1', decree) : undefined}
+          warGodDamageReduction={warGodGetDamageReduction?.('player1') || 0}
+          warGodMinDamage={warGodGetMinDamage?.('player1') ?? 1}
+          warGodBonusDamage={warGodGetBonusDamage?.('player1') || 0}
         />
       </div>
 
