@@ -1,7 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Swords } from 'lucide-react';
-import { useEffect } from 'react';
-import { useGameSounds } from '@/hooks/useSound';
+
 
 interface TurnTransitionProps {
   show: boolean;
@@ -10,15 +9,8 @@ interface TurnTransitionProps {
 }
 
 export const TurnTransition = ({ show, player, onComplete }: TurnTransitionProps) => {
-  const { playSound, vibrate } = useGameSounds();
   const playerLabel = player === 'player1' ? 'Jugador 1' : 'Jugador 2';
-
-  useEffect(() => {
-    if (show) {
-      playSound('phase');
-      vibrate([30, 50, 30]); // Mechanical sequence haptic
-    }
-  }, [show, playSound, vibrate]);
+  const isPlayer2 = player === 'player2';
 
   return (
     <AnimatePresence>
@@ -147,7 +139,7 @@ export const TurnTransition = ({ show, player, onComplete }: TurnTransitionProps
               damping: 15,
               delay: 0.3
             }}
-            className="flex flex-col items-center gap-6 z-10"
+            className={`flex flex-col items-center gap-6 z-10 ${isPlayer2 ? 'rotate-180' : ''}`}
           >
             {/* Icon with massive glow */}
             <motion.div
