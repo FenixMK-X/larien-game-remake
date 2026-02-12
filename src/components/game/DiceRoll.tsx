@@ -115,9 +115,10 @@ export const DiceRoll = ({ onComplete }: DiceRollProps) => {
             animate={phase === 'rolling' ? { rotate: [0, 10, -10, 0] } : {}}
             transition={{ repeat: phase === 'rolling' ? Infinity : 0, duration: 0.2 }}
           >
-            <Player1Dice className={`w-16 h-16 ${
-              winner === 'player1' ? 'text-player1' : 'text-foreground'
-            }`} />
+            <Player1Dice 
+              className="w-16 h-16"
+              style={{ color: winner === 'player1' ? 'hsl(var(--player1))' : undefined }}
+            />
           </motion.div>
           <motion.span
             className="text-2xl font-display font-bold mt-2"
@@ -160,9 +161,10 @@ export const DiceRoll = ({ onComplete }: DiceRollProps) => {
             animate={phase === 'rolling' ? { rotate: [0, -10, 10, 0] } : {}}
             transition={{ repeat: phase === 'rolling' ? Infinity : 0, duration: 0.2 }}
           >
-            <Player2Dice className={`w-16 h-16 ${
-              winner === 'player2' ? 'text-player2' : 'text-foreground'
-            }`} />
+            <Player2Dice 
+              className="w-16 h-16"
+              style={{ color: winner === 'player2' ? 'hsl(var(--player2))' : undefined }}
+            />
           </motion.div>
           <motion.span
             className="text-2xl font-display font-bold mt-2"
@@ -239,16 +241,18 @@ export const DiceRoll = ({ onComplete }: DiceRollProps) => {
             exit={{ y: -20, opacity: 0 }}
           >
             <p className="text-lg text-center">
-              <span className={`font-display font-bold ${
-                winner === 'player1' ? 'text-player1' : 'text-player2'
-              }`}>
+              <span 
+                className="font-display font-bold"
+                style={{ color: winner === 'player1' ? 'hsl(var(--player1))' : 'hsl(var(--player2))' }}
+              >
                 {winner === 'player1' ? 'Jugador 1' : 'Jugador 2'}
               </span>
               {' '}gana. ¿Quién empieza?
             </p>
             <div className="flex gap-4">
               <motion.button
-                className="px-6 py-3 bg-player1 text-white rounded-lg font-bold uppercase tracking-wider"
+                className="px-6 py-3 rounded-lg font-bold uppercase tracking-wider"
+                style={{ backgroundColor: 'hsl(var(--player1))', color: 'hsl(var(--player1-bg))' }}
                 onClick={() => handleChoosePlayer('player1')}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -256,7 +260,8 @@ export const DiceRoll = ({ onComplete }: DiceRollProps) => {
                 Jugador 1
               </motion.button>
               <motion.button
-                className="px-6 py-3 bg-player2 text-white rounded-lg font-bold uppercase tracking-wider"
+                className="px-6 py-3 rounded-lg font-bold uppercase tracking-wider"
+                style={{ backgroundColor: 'hsl(var(--player2))', color: 'hsl(var(--player2-bg))' }}
                 onClick={() => handleChoosePlayer('player2')}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
