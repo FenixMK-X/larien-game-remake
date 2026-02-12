@@ -11,7 +11,6 @@ import { useDomainMusic } from '@/hooks/useDomainMusic';
 import { useToast } from '@/hooks/use-toast';
 import { useWitchCoven } from '@/hooks/useWitchCoven';
 import { useJackpotGame } from '@/hooks/useJackpotGame';
-import { useWarGod } from '@/hooks/useWarGod';
 import { getColorHsl } from '@/components/game/SettingsModal';
 import type { ActiveSummon } from '@/components/game/SummonTracker';
 import type { TokenCount, TokenType } from '@/components/game/TokenCounter';
@@ -82,19 +81,6 @@ const Index = () => {
     setActiveTokens,
   });
 
-  // War God hook
-  const warGod = useWarGod({
-    gameState,
-    updateLife,
-    onTributeApplied: (player, damage) => {
-      toast({
-        title: '⚔️ Tributo de Sangre',
-        description: `${player === 'player1' ? 'Jugador 1' : 'Jugador 2'} pierde ${damage} vida.`,
-        variant: 'destructive',
-      });
-    },
-  });
-
   // Domain music control
   useEffect(() => {
     const hasActiveJackpot = activeDomains.player1.some(d => d.skillId === 'jackpot') ||
@@ -126,37 +112,16 @@ const Index = () => {
   const handleSkillsComplete = useCallback((player1Skills: Skill[], player2Skills: Skill[]) => {
     if (pendingGame?.startingPlayer) {
       startGame(pendingGame.life, pendingGame.timerMinutes, pendingGame.startingPlayer);
-      const p1Skill = player1Skills[0] || null;
-      const p2Skill = player2Skills[0] || null;
-      setActiveSkills({ player1: p1Skill, player2: p2Skill });
-      // Auto-activate war god if selected
-      if (p1Skill?.isAutoActivate && p1Skill.id === 'war-god') {
-        warGod.actions.activateWarGod('player1');
-        // Process first turn for starting player
-        if (pendingGame.startingPlayer === 'player1') {
-          setTimeout(() => warGod.actions.processWarGodTurnStart('player1'), 100);
-        }
-      }
-      if (p2Skill?.isAutoActivate && p2Skill.id === 'war-god') {
-        warGod.actions.activateWarGod('player2');
-        if (pendingGame.startingPlayer === 'player2') {
-          setTimeout(() => warGod.actions.processWarGodTurnStart('player2'), 100);
-        }
-      }
+      setActiveSkills({ player1: player1Skills[0] || null, player2: player2Skills[0] || null });
       setPendingGame(null);
       setCurrentPhase('game');
     }
-  }, [pendingGame, startGame, warGod.actions]);
+  }, [pendingGame, startGame]);
 
   // Handle skill activation
   const handleUseSkill = useCallback((player: 'player1' | 'player2', optionId?: string) => {
     const skill = activeSkills[player];
     if (!skill) return;
-
-    // War God - decrees are handled via WarGodPanel, skill button just shows info
-    if (skill.id === 'war-god') {
-      return; // Decrees handled by WarGodPanel in PlayerZone
-    }
 
     if (skill.id === 'jackpot') {
       jackpot.actions.setPendingDomain({ player, skillId: skill.id, skillName: skill.name });
@@ -375,9 +340,7 @@ const Index = () => {
     reduceCooldowns();
     updateDragonCounters(next);
     decrementDomainTurns(current);
-    // Process war god turn start for next player
-    warGod.actions.processWarGodTurnStart(next);
-  }, [gameState.currentPlayer, autoRemoveEndOfTurnEntities, witchCoven.actions, endTurn, reduceCooldowns, updateDragonCounters, decrementDomainTurns, warGod.actions]);
+  }, [gameState.currentPlayer, autoRemoveEndOfTurnEntities, witchCoven.actions, endTurn, reduceCooldowns, updateDragonCounters, decrementDomainTurns]);
 
   const handlePassPhaseWithCooldown = useCallback(() => {
     const current = gameState.currentPlayer;
@@ -388,9 +351,7 @@ const Index = () => {
     reduceCooldowns();
     updateDragonCounters(next);
     decrementDomainTurns(current);
-    // Process war god turn start for next player
-    warGod.actions.processWarGodTurnStart(next);
-  }, [gameState.currentPlayer, autoRemoveEndOfTurnEntities, witchCoven.actions, passPhase, reduceCooldowns, updateDragonCounters, decrementDomainTurns, warGod.actions]);
+  }, [gameState.currentPlayer, autoRemoveEndOfTurnEntities, witchCoven.actions, passPhase, reduceCooldowns, updateDragonCounters, decrementDomainTurns]);
 
   // Summon/Token/Domain management
   const handleAddSummon = useCallback((player: 'player1' | 'player2', summon: Omit<ActiveSummon, 'id'>) => {
@@ -439,9 +400,8 @@ const Index = () => {
     setSkillHistory({ player1: [], player2: [] });
     jackpot.actions.resetJackpot();
     witchCoven.actions.resetWitchCoven();
-    warGod.actions.resetWarGod();
     insectsFromQueenRef.current = { player1: false, player2: false };
-  }, [jackpot.actions, witchCoven.actions, warGod.actions]);
+  }, [jackpot.actions, witchCoven.actions]);
 
   const handleExitGame = useCallback(() => {
     stopDomainMusic();
@@ -529,13 +489,6 @@ const Index = () => {
             player2HasOverflowingLuck={jackpot.state.jackpotEffects.player2.overflowingLuck}
             player1IsSecondChance={jackpot.state.jackpotEffects.player1.isSecondChance}
             player2IsSecondChance={jackpot.state.jackpotEffects.player2.isSecondChance}
-            player1WarGodState={warGod.state.player1.isActive ? warGod.state.player1 : null}
-            player2WarGodState={warGod.state.player2.isActive ? warGod.state.player2 : null}
-            onWarGodDecree={(player, decree) => warGod.actions.useDecree(player, decree)}
-            warGodGetAvailableDecrees={warGod.actions.getAvailableDecrees}
-            warGodGetDamageReduction={warGod.actions.getDamageReduction}
-            warGodGetMinDamage={warGod.actions.getMinDamage}
-            warGodGetBonusDamage={warGod.actions.getBonusDamage}
           />
         )}
       </AnimatePresence>

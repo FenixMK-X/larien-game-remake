@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Shuffle, HandMetal, Bug, Pickaxe, Check, Info, Lamp,
   Skull, Sword, Flame, Mountain, Scale, Car, Heart,
-  DoorOpen, Coins, Target, Dices, Shield,
+  DoorOpen, Coins, Target, Dices,
   ChevronDown, ChevronUp, Lightbulb
 } from 'lucide-react';
 import { DeckRecommendation } from './DeckRecommendation';
@@ -25,7 +25,7 @@ export interface Skill {
   id: string;
   name: string;
   // NOTE: 'clown', 'shadow', and 'greek' icons removed - corresponding skills are disabled
-  icon: 'dwarf' | 'insect' | 'lamp' | 'lastbreath' | 'hero' | 'witch' | 'giant' | 'treasure' | 'delorian' | 'dragon' | 'hellgate' | 'dollars' | 'destiny' | 'jackpot' | 'wargod';
+  icon: 'dwarf' | 'insect' | 'lamp' | 'lastbreath' | 'hero' | 'witch' | 'giant' | 'treasure' | 'delorian' | 'dragon' | 'hellgate' | 'dollars' | 'destiny' | 'jackpot';
   description: string;
   usageType: 'conditional' | 'once' | 'limited' | 'cooldown';
   maxUses?: number;
@@ -41,7 +41,6 @@ export interface Skill {
   activationCondition?: 'none' | 'life50' | 'life40' | 'life25'; // Condición de vida para activar
   isDisabled?: boolean; // Habilidad deshabilitada temporalmente
   isSummonSkill?: boolean; // Skills de invocación (bloqueadas primeros 3 turnos del jugador)
-  isAutoActivate?: boolean; // Se activa automáticamente al inicio de la partida
   detailedRules?: {
     punishmentComplete?: PunishmentDetail;
     punishmentReduced?: PunishmentDetail;
@@ -65,7 +64,6 @@ const getSkillIcon = (iconType: Skill['icon']) => {
     case 'dollars': return Coins;
     case 'destiny': return Target;
     case 'jackpot': return Dices;
-    case 'wargod': return Shield;
     default: return Info;
   }
 };
@@ -306,34 +304,6 @@ PASIVA DE SUERTE (25%):
       { id: 'jackpot-9', name: '9. 100% de Chances', description: '+1 habilidad adicional al azar. 100% de probabilidad de anular castigo y reactivar Jackpot. Si sacas el 8 también: SUERTE DESBORDADA (100% para tu próximo castigo).', used: false },
     ],
   },
-  // ===== HABILIDAD DE GUERRA =====
-  {
-    id: 'war-god',
-    name: 'Avatar Bélico – Decreto del Dios de la Guerra',
-    icon: 'wargod',
-    description: `ACTIVACIÓN AUTOMÁTICA al inicio del duelo. Todos los efectos permanecen activos durante toda la partida.
-
-PASIVA 1 – Presencia del Conquistador:
-• Al inicio de tu turno, ganas 1 Punto de Guerra (2 desde turno 4).
-• Por cada PG: +1 daño infligido al oponente, -1 daño recibido (mín 1, mín 0 desde turno 7).
-
-PASIVA 2 – Tributo de Sangre:
-• Al inicio de tu turno, pierdes vida = ⌈1 + PG/2⌉. Irreducible e inevitable.
-• Si llegas a 0, NO pierdes hasta el final del turno.
-
-DECRETO (1/turno, no repetir consecutivo):
-• Sangre: Inflige daño = PG al oponente.
-• Dominio: Recupera vida = PG.
-• Exterminio: Todo daño infligido se duplica este turno.`,
-    usageType: 'conditional',
-    isAutoActivate: true,
-    ownerTurnOnly: false,
-    options: [
-      { id: 'decree-blood', name: 'Decreto de Sangre', description: 'Inflige daño directo al oponente igual a tus Puntos de Guerra actuales.', used: false },
-      { id: 'decree-domination', name: 'Decreto de Dominio', description: 'Recupera vida igual a tus Puntos de Guerra actuales.', used: false },
-      { id: 'decree-extermination', name: 'Decreto de Exterminio', description: 'Todo daño que inflijas este turno se duplica.', used: false },
-    ],
-  },
 ];
 
 // Skill categories for organization (only active skills)
@@ -343,7 +313,6 @@ export const SKILL_CATEGORIES = [
   { id: 'utility', name: '⚡ Utilidad', skills: ['genie-lamp', 'delorian', 'destiny-theft'] },
   { id: 'reactive', name: '🛡️ Reactiva', skills: ['last-breath'] },
   { id: 'domain', name: '🎰 Dominio (Azar)', skills: ['jackpot', 'witch-coven'] },
-  { id: 'war', name: '⚔️ Guerra', skills: ['war-god'] },
 ];
 
 // Collapsible section for domain skills
