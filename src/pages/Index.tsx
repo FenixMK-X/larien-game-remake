@@ -11,6 +11,7 @@ import { useDomainMusic } from '@/hooks/useDomainMusic';
 import { useToast } from '@/hooks/use-toast';
 import { useWitchCoven } from '@/hooks/useWitchCoven';
 import { useJackpotGame } from '@/hooks/useJackpotGame';
+import { useGameColors } from '@/hooks/useGameColors';
 import { getColorHsl } from '@/components/game/SettingsModal';
 import type { ActiveSummon } from '@/components/game/SummonTracker';
 import type { TokenCount, TokenType } from '@/components/game/TokenCounter';
@@ -60,6 +61,13 @@ const Index = () => {
     advancePhase, passPhase, endTurn,
     toggleTimer, resetTimer, resetGame, exitToSetup,
   } = useGameState();
+
+  // Initialize reactive color system at root level so ALL screens (dice, skills, game) use selected colors
+  useGameColors({
+    player1Color: playerColors.player1,
+    player2Color: playerColors.player2,
+    currentPlayer: gameState.currentPlayer,
+  });
 
   // Use extracted hooks
   const witchCoven = useWitchCoven({

@@ -15,7 +15,7 @@ import { RotateCcw, X, Hash } from 'lucide-react';
 import type { GameState, Player } from '@/hooks/useGameState';
 import type { Skill } from './SkillSelection';
 import { useGameSounds } from '@/hooks/useSound';
-import { useGameColors } from '@/hooks/useGameColors';
+// Colors are now managed at Index.tsx level via useGameColors
 
 interface GameScreenProps {
   gameState: GameState;
@@ -99,12 +99,7 @@ export const GameScreen = ({
   const [showTurnTransition, setShowTurnTransition] = useState(false);
   const [transitionPlayer, setTransitionPlayer] = useState<Player>('player1');
 
-  // Initialize reactive color system
-  useGameColors({
-    player1Color: player1Color || 'gold',
-    player2Color: player2Color || 'blue',
-    currentPlayer: gameState.currentPlayer,
-  });
+  // Colors are now managed at Index.tsx level
 
   const hasTimer = gameState.timerDuration > 0;
   
