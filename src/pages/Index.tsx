@@ -89,14 +89,16 @@ const Index = () => {
     setActiveTokens,
   });
 
-  // Domain music control
+  // Domain music control - play when jackpot domain is active, stop when it ends
   useEffect(() => {
     const hasActiveJackpot = activeDomains.player1.some(d => d.skillId === 'jackpot') ||
                              activeDomains.player2.some(d => d.skillId === 'jackpot');
     if (hasActiveJackpot) {
       playDomainMusic('jackpot');
+    } else {
+      stopDomainMusic();
     }
-  }, [activeDomains, playDomainMusic]);
+  }, [activeDomains, playDomainMusic, stopDomainMusic]);
 
   const handleSetupComplete = useCallback((life: number, timerMinutes: number | null, skillsMode: boolean, colors?: { player1: string; player2: string }) => {
     setPendingGame({ life, timerMinutes, skillsMode, playerColors: colors });
